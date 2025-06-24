@@ -15,19 +15,25 @@
 name: Validate
 on:
   pull_request:
-    paths:
-      - '**.cue'
 jobs:
-  validate:
+  cue-eval:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.24'
       - shell: bash
         run: go install cuelang.org/go/cmd/cue@latest
       - shell: bash
         run: echo "${HOME}/go/bin" >> $GITHUB_PATH
       - shell: bash
         run: cue vet -c=false ./...
+  go-generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - uses: sudoswedenab/sudo-actions/golang-generate@main
