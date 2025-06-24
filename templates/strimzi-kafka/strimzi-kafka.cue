@@ -13,7 +13,7 @@ import (
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
 
-#Odd:             num={1 + 2*(div(num, 2))}
+#Odd:             num=1 + 2*(div(num, 2))
 #StorageType:     "ephemeral" | "persistent-claim"
 #StorageClass:    "cephfs" | "rbd"
 #CpuQuantity:     string & =~"^([0-9]+(\\.[0-9]+)?)(m)?$"
