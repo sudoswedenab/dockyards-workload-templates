@@ -13,6 +13,10 @@ import (
 	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
 )
 
+#CpuQuantity:     string & =~"^([0-9]+(\\.[0-9]+)?)(m)?$"
+#MemoryQuantity:  string & =~"^([0-9]+(\\.[0-9]+)?)(Ki|Mi|Gi|Ti|Pi|Ei)?$"
+#StorageQuantity: string & =~"(^0|([0-9]*[.])?[0-9]+((K|M|G|T|E|P)i?)?B)$'"
+
 #RemoteWrite: {
 	basicAuth?: {
 		url!:        string
@@ -23,10 +27,23 @@ import (
 }
 
 #Input: {
-	repository: string | *"https://prometheus-community.github.io/helm-charts"
-	chart:      string | *"kube-prometheus-stack"
-	version:    string | *"67.11.0"
-	agentMode:  bool | *true
+	repository:         string | *"https://prometheus-community.github.io/helm-charts"
+	chart:              string | *"kube-prometheus-stack"
+	version:            string | *"67.11.0"
+	agentMode:          bool | *false
+	prometheusReplicas: int | *1
+	retentionSize:      #StorageQuantity | *"1GiB"
+	resources: {
+		requests: {
+			memory: #MemoryQuantity | *"256Mi"
+			cpu:    #CpuQuantity | *"250m"
+		}
+		limits: {
+			memory: #MemoryQuantity | *"1500Mi"
+			cpu:    #CpuQuantity | *"500m"
+		}
+	}
+
 	remoteWrite?: [...#RemoteWrite]
 }
 
@@ -54,8 +71,20 @@ _values: apiextensionsv1.#JSON & {
 		prometheusSpec: {
 			scrapeInterval:                      "30s"
 			evaluationInterval:                  "30s"
+			replicas:                            #workload.spec.input.prometheusReplicas
+			retentionSize:                       #workload.spec.input.retentionSize
 			podMonitorSelectorNilUsesHelmValues: false
 			podMonitorNamespaceSelector: {}
+			resources: {
+				requests: {
+					memory: #workload.spec.input.resources.requests.memory
+					cpu:    #workload.spec.input.resources.requests.cpu
+				}
+				limits: {
+					memory: #workload.spec.input.resources.limits.memory
+					cpu:    #workload.spec.input.resources.limits.cpu
+				}
+			}
 			if #workload.spec.input.remoteWrite != _|_ {
 				remoteWrite: [
 					for remoteWriteConfig in #workload.spec.input.remoteWrite {
