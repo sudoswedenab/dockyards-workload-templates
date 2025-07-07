@@ -1,10 +1,10 @@
 package template
 
 import (
-"strings" 
-helmv2 "github.com/fluxcd/helm-controller/api/v2"
-sourcev1 "github.com/fluxcd/source-controller/api/v1"
-dockyardsv1	"bitbucket.org/sudosweden/dockyards-backend/pkg/api/v1alpha3"  
+	"strings"
+	helmv2 "github.com/fluxcd/helm-controller/api/v2"
+	sourcev1 "github.com/fluxcd/source-controller/api/v1"
+	dockyardsv1 "bitbucket.org/sudosweden/dockyards-backend/pkg/api/v1alpha3"
 )
 
 #Input: {
@@ -48,12 +48,14 @@ helmRelease: helmv2.#HelmRelease & {
 	}
 	spec: {
 		chart: {
-			chart: #workload.spec.input.chart
-			sourceRef: {
-				kind: helmRepository.kind
-				name: helmRepository.metadata.name
+			spec: {
+				chart:   #workload.spec.input.chart
+				version: #workload.spec.input.version
+				sourceRef: {
+					kind: helmRepository.kind
+					name: helmRepository.metadata.name
+				}
 			}
-			version: #workload.spec.input.version
 		}
 		install: {
 			createNamespace: true
@@ -86,97 +88,97 @@ helmRelease: helmv2.#HelmRelease & {
 					}
 					dashboards: {
 						enabled: true
-						label: "grafana_dashboard"
-						folder: "default"
+						label:   "grafana_dashboard"
+						folder:  "default"
 					}
 				}
 				ingress: {
 					enabled: true
 					annotations: {
-						"kubernetes.io/ingress.class": "nginx"
+						"kubernetes.io/ingress.class":    "nginx"
 						"cert-manager.io/cluster-issuer": "letsencrypt"
 					}
-                    hostName: #ingressHost
+					hostName: #ingressHost
 					tls: [
 						{
 							hosts: [#ingressHost]
-			                secretName: "grafana-ingress"
+							secretName: "grafana-ingress"
 						}]
-                        nginx: {
-                            enabled: false
-                        }
+					nginx: {
+						enabled: false
+					}
 				}
 			}
 		}
 	}
 }
 
-grafanaDatasource: {
-	apiVersion: "v1"
-	kind:       "ConfigMap"
-	metadata: {
-		name:      "grafana-datasources"
-		namespace: #workload.spec.targetNamespace
-		labels: {
-			grafana_datasource: "1"
-		}
-	}
-	data: {
-		"datasources.yaml": '''
-             		{
-			"apiVersion": 1,
-			"datasources": [
-				{
-					"name": "Prometheus",
-					"type": "prometheus",
-					"access": "proxy",
-					"url": "%s",
-					"isDefault": true
-				}
-			]
-		}
-	    '''
-	}
-}
-
-grafanaDashboard: {
-	apiVersion: "v1"
-	kind:       "ConfigMap"
-	metadata: {
-		name:      "grafana-dashboard-prometheus"
-		namespace: #workload.spec.targetNamespace
-		labels: {
-			grafana_dashboard: "1"
-		}
-	}
-	data: {
-		"prometheus.json": '''
-		{
-			"id": null,
-			"title": "Prometheus Example",
-			"panels": [
-				{
-					"type": "graph",
-					"title": "Pod CPU Usage",
-					"targets": [
-						{
-							"expr": "sum(rate(container_cpu_usage_seconds_total{image!=''}[5m])) by (pod)",
-							"legendFormat": "{{pod}}",
-							"refId": "A"
-						}
-					],
-					"datasource": "Prometheus",
-					"gridPos": {
-						"x": 0,
-						"y": 0,
-						"w": 12,
-						"h": 8
-					}
-				}
-			],
-			"schemaVersion": 16,
-			"version": 0
-		}
-		'''
-	}
-}
+// grafanaDatasource: {
+// 	apiVersion: "v1"
+// 	kind:       "ConfigMap"
+// 	metadata: {
+// 		name:      "grafana-datasources"
+// 		namespace: #workload.spec.targetNamespace
+// 		labels: {
+// 			grafana_datasource: "1"
+// 		}
+// 	}
+// 	data: {
+// 		"datasources.json": '''
+// 			{
+// 			  "apiVersion": 1,
+// 			  "datasources": [
+// 			    {
+// 			      "name": "Prometheus",
+// 			      "type": "prometheus",
+// 			      "access": "proxy",
+// 			      "url": "%s",
+// 			      "isDefault": true
+// 			    }
+// 			  ]
+// 			}
+// 			'''
+// 	}
+// }
+// 
+// grafanaDashboard: {
+// 	apiVersion: "v1"
+// 	kind:       "ConfigMap"
+// 	metadata: {
+// 		name:      "grafana-dashboard-prometheus"
+// 		namespace: #workload.spec.targetNamespace
+// 		labels: {
+// 			grafana_dashboard: "1"
+// 		}
+// 	}
+// 	data: {
+// 		"prometheus.json": '''
+// 			{
+// 				"id": null,
+// 				"title": "Prometheus Example",
+// 				"panels": [
+// 					{
+// 						"type": "graph",
+// 						"title": "Pod CPU Usage",
+// 						"targets": [
+// 							{
+// 								"expr": "sum(rate(container_cpu_usage_seconds_total{image!=''}[5m])) by (pod)",
+// 								"legendFormat": "{{pod}}",
+// 								"refId": "A"
+// 							}
+// 						],
+// 						"datasource": "Prometheus",
+// 						"gridPos": {
+// 							"x": 0,
+// 							"y": 0,
+// 							"w": 12,
+// 							"h": 8
+// 						}
+// 					}
+// 				],
+// 				"schemaVersion": 16,
+// 				"version": 0
+// 			}
+// 			'''
+// 	}
+// }

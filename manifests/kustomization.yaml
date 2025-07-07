@@ -22,6 +22,7 @@ resources:
 - workloadtemplate_containerimage.yaml
 - workloadtemplate_externaldns.yaml
 - workloadtemplate_gitrepository.yaml
+- workloadtemplate_grafana.yaml
 - workloadtemplate_helmchart.yaml
 - workloadtemplate_ingressnginx.yaml
 - workloadtemplate_openebsdynamiclocalpvprovisioner.yaml
