@@ -1,0 +1,17 @@
+apiVersion: dockyards.io/v1alpha3
+kind: Workload
+metadata:
+  name: grafana
+  namespace: dockyards-2h8px
+spec:
+  provenience: "User"
+  targetNamespace: grafana
+  input:
+    chart: grafana
+    repository: https://grafana.github.io/helm-charts
+    version: 9.2.9
+    adminUser: admin
+    adminPassword: admin
+    prometheusURL: http://prometheus-stack-prometheus.monitoring.svc.cluster.local
+    ingressHost: grafana.boxdev.sudobash.io
+
