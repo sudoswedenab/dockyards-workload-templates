@@ -5,6 +5,7 @@ import (
 	helmv2 "github.com/fluxcd/helm-controller/api/v2"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
 	dockyardsv1 "bitbucket.org/sudosweden/dockyards-backend/pkg/api/v1alpha3"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 )
 
 #Input: {
@@ -14,13 +15,12 @@ import (
 	adminUser:     string | *"admin"
 	adminPassword: string | *"admin"
 	prometheusURL: string | *"http://prometheus-stack-sofia-pro-prometheus.prometheus-stack.svc.cluster.local"
-	domain:        string | *".sofia.dockyards-2h8px.trashcloud.xyz"
+	domain:        string | *"grafana.sofia.dockyards-2h8px.trashcloud.xyz"
 }
 
 #ingressHost: #workload.spec.input.domain
 #cluster:     dockyardsv1.#Cluster
-
-#workload: dockyardsv1.#Workload
+#workload:    dockyardsv1.#Workload
 #workload: spec: input: #Input
 
 helmRepository: sourcev1.#HelmRepository & {
@@ -39,9 +39,50 @@ helmRepository: sourcev1.#HelmRepository & {
 	}
 }
 
+_values: apiextensionsv1.#JSON & {
+	persistence: {
+		enabled:           false
+		storageClassName?: string
+		size?:             string
+	}
+
+	sidecar: {
+		datasources: {
+			enabled: true
+		}
+		dashboards: {
+			enabled: true
+			label:   "grafana_dashboard"
+			folder:  "default"
+		}
+	}
+
+	ingress: {
+		enabled:          true
+		ingressClassName: "nginx"
+		annotations: {
+			//	"kubernetes.io/ingress.class":    "nginx"
+			"cert-manager.io/cluster-issuer": "letsencrypt"
+		}
+		hosts: [{
+			host: #ingressHost
+			paths: [{
+				path:     "/"
+				pathType: "Prefix"
+			}]
+		}]
+		tls: [{
+			hosts: [#ingressHost]
+			secretName: "grafana-ingress"
+		}]
+	}
+
+
+}
+
 helmRelease: helmv2.#HelmRelease & {
 	apiVersion: "helm.toolkit.fluxcd.io/v2"
-	kind:       "HelmRelease"
+	kind:       helmv2.#HelmReleaseKind
 	metadata: {
 		name:      #workload.metadata.name
 		namespace: #workload.metadata.namespace
@@ -57,59 +98,12 @@ helmRelease: helmv2.#HelmRelease & {
 				}
 			}
 		}
-		install: {
-			createNamespace: true
-			remediation: {
-				retries: -1
-			}
-		}
+		install: remediation: retries: -1
 		interval: "5m"
-		kubeConfig: {
-			secretRef: {
-				name: #cluster.metadata.name + "-kubeconfig"
-			}
-		}
+		kubeConfig: secretRef: name: #cluster.metadata.name + "-kubeconfig"
 		storageNamespace: #workload.spec.targetNamespace
 		targetNamespace:  #workload.spec.targetNamespace
-		values: {
-			grafana: {
-				enabled: true
-				admin: {
-					user:     #workload.spec.input.adminUser
-					password: #workload.spec.input.adminPassword
-				}
-				persistence: {
-					enabled: true
-					size:    "10Gi"
-				}
-				sidecar: {
-					datasources: {
-						enabled: true
-					}
-					dashboards: {
-						enabled: true
-						label:   "grafana_dashboard"
-						folder:  "default"
-					}
-				}
-				ingress: {
-					enabled: true
-					annotations: {
-						"kubernetes.io/ingress.class":    "nginx"
-						"cert-manager.io/cluster-issuer": "letsencrypt"
-					}
-					hostName: #ingressHost
-					tls: [
-						{
-							hosts: [#ingressHost]
-							secretName: "grafana-ingress"
-						}]
-					nginx: {
-						enabled: false
-					}
-				}
-			}
-		}
+		values:           _values
 	}
 }
 
