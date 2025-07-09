@@ -2,8 +2,11 @@ package template
 
 import (
 	"strings"
+	"encoding/yaml"
+
 	helmv2 "github.com/fluxcd/helm-controller/api/v2"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
+	corev1 "k8s.io/api/core/v1"
 	dockyardsv1 "bitbucket.org/sudosweden/dockyards-backend/pkg/api/v1alpha3"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 )
@@ -15,7 +18,7 @@ import (
 	adminUser:     string | *"admin"
 	adminPassword: string | *"admin"
 	prometheusURL: string | *"http://prometheus-stack-sofia-pro-prometheus.prometheus-stack.svc.cluster.local"
-	domain:        string | *"grafana.sofia.dockyards-2h8px.trashcloud.xyz"
+	domain:        string | *"lkj.strimzi-kafka.dockyards-mvqp2.trashcloud.xyz"
 }
 
 #ingressHost: #workload.spec.input.domain
@@ -39,45 +42,48 @@ helmRepository: sourcev1.#HelmRepository & {
 	}
 }
 
+_namespace: corev1.#Namespace & {
+	apiVersion: "v1"
+	kind:       "Namespace"
+	metadata: {
+		name: #workload.spec.targetNamespace
+		labels: {
+			"pod-security.kubernetes.io/enforce":         "privileged"
+			"pod-security.kubernetes.io/enforce-version": "latest"
+		}
+	}
+}
+
+worktree: dockyardsv1.#Worktree & {
+	apiVersion: "dockyards.io/v1alpha3"
+	kind:       dockyardsv1.#WorktreeKind
+	metadata: {
+		name:      #workload.metadata.name
+		namespace: #workload.metadata.namespace
+	}
+	spec: {
+		files: {
+			"namespace.yaml": '\(yaml.Marshal(_namespace))'
+		}
+	}
+}
+
 _values: apiextensionsv1.#JSON & {
-	persistence: {
-		enabled:           false
-		storageClassName?: string
-		size?:             string
-	}
-
-	sidecar: {
-		datasources: {
-			enabled: true
-		}
-		dashboards: {
-			enabled: true
-			label:   "grafana_dashboard"
-			folder:  "default"
-		}
-	}
-
 	ingress: {
 		enabled:          true
 		ingressClassName: "nginx"
 		annotations: {
-			//	"kubernetes.io/ingress.class":    "nginx"
+			"kubernetes.io/ingress.class":    "nginx"
 			"cert-manager.io/cluster-issuer": "letsencrypt"
 		}
-		hosts: [{
-			host: #ingressHost
-			paths: [{
-				path:     "/"
-				pathType: "Prefix"
-			}]
-		}]
+		hosts: [#ingressHost]
+		path:     "/"
+		pathType: "Prefix"
 		tls: [{
 			hosts: [#ingressHost]
 			secretName: "grafana-ingress"
 		}]
 	}
-
-
 }
 
 helmRelease: helmv2.#HelmRelease & {

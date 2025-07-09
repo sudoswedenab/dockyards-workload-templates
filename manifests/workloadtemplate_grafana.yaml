@@ -22,8 +22,11 @@ spec:
 
     import (
       "strings"
+      "encoding/yaml"
+
       helmv2 "github.com/fluxcd/helm-controller/api/v2"
       sourcev1 "github.com/fluxcd/source-controller/api/v1"
+      corev1 "k8s.io/api/core/v1"
       dockyardsv1 "bitbucket.org/sudosweden/dockyards-backend/pkg/api/v1alpha3"
       apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
     )
@@ -35,7 +38,7 @@ spec:
       adminUser:     string | *"admin"
       adminPassword: string | *"admin"
       prometheusURL: string | *"http://prometheus-stack-sofia-pro-prometheus.prometheus-stack.svc.cluster.local"
-      domain:        string | *".sofia.dockyards-2h8px.trashcloud.xyz"
+      domain:        string | *"lkj.strimzi-kafka.dockyards-mvqp2.trashcloud.xyz"
     }
 
     #ingressHost: #workload.spec.input.domain
@@ -59,45 +62,43 @@ spec:
       }
     }
 
-    _values: apiextensionsv1.#JSON & {
-      persistence: {
-        enabled:           false
-        storageClassName?: string
-        size?:             string
-      }
-
-      sidecar: {
-        datasources: enabled: true
-        dashboards: {
-          enabled: true
-          label:   "grafana_dashboard"
-          folder:  "default"
+    _namespace: corev1.#Namespace & {
+      apiVersion: "v1"
+      kind:       "Namespace"
+      metadata: {
+        name: #workload.spec.targetNamespace
+        labels: {
+          "pod-security.kubernetes.io/enforce":         "privileged"
+          "pod-security.kubernetes.io/enforce-version": "latest"
         }
       }
+    }
 
+    worktree: dockyardsv1.#Worktree & {
+      apiVersion: "dockyards.io/v1alpha3"
+      kind:       dockyardsv1.#WorktreeKind
+      metadata: {
+        name:      #workload.metadata.name
+        namespace: #workload.metadata.namespace
+      }
+      spec: files: "namespace.yaml": '\(yaml.Marshal(_namespace))'
+    }
+
+    _values: apiextensionsv1.#JSON & {
       ingress: {
-        enabled:           true
-        ingressClassName?: "nginx"
+        enabled:          true
+        ingressClassName: "nginx"
         annotations: {
           "kubernetes.io/ingress.class":    "nginx"
           "cert-manager.io/cluster-issuer": "letsencrypt"
         }
-        hosts: [{
-          host: #ingressHost
-          paths: [{
-            path:     "/grafana"
-            pathType: "Prefix"
-          }]
-        }]
+        hosts: [#ingressHost]
+        path:     "/"
+        pathType: "Prefix"
         tls: [{
           hosts: [#ingressHost]
           secretName: "grafana-ingress"
         }]
-      }
-
-      "grafana.ini": server: {
-        root_url:            "%(protocol)s://%(domain)s/grafana"
-        serve_from_sub_path: true
       }
     }
 
@@ -109,7 +110,6 @@ spec:
         namespace: #workload.metadata.namespace
       }
       spec: {
-        releaseName: "grafana"
         chart: spec: {
           chart:   #workload.spec.input.chart
           version: #workload.spec.input.version
@@ -118,10 +118,12 @@ spec:
             name: helmRepository.metadata.name
           }
         }
-        interval: "5m"
         install: remediation: retries: -1
+        interval: "5m"
         kubeConfig: secretRef: name: #cluster.metadata.name + "-kubeconfig"
-        values: _values
+        storageNamespace: #workload.spec.targetNamespace
+        targetNamespace:  #workload.spec.targetNamespace
+        values:           _values
       }
     }
   type: dockyards.io/cue
