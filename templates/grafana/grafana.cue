@@ -18,13 +18,13 @@ import (
 	adminUser:     string | *"admin"
 	adminPassword: string | *"admin"
 	prometheusURL: string | *"http://prometheus-stack-sofia-pro-prometheus.prometheus-stack.svc.cluster.local"
-	domain:        string | *"lkj.strimzi-kafka.dockyards-mvqp2.trashcloud.xyz"
+	defaultDomain: string | *"grafana." + #workload.metadata.namespace + "." + #cluster.metadata.name + ".trashcloud.xyz"
 }
 
-#ingressHost: #workload.spec.input.domain
-#cluster:     dockyardsv1.#Cluster
-#workload:    dockyardsv1.#Workload
+#cluster:  dockyardsv1.#Cluster
+#workload: dockyardsv1.#Workload
 #workload: spec: input: #Input
+#ingressHost: #workload.spec.input.defaultDomain
 
 helmRepository: sourcev1.#HelmRepository & {
 	apiVersion: "source.toolkit.fluxcd.io/v1"
@@ -84,6 +84,24 @@ _values: apiextensionsv1.#JSON & {
 			secretName: "grafana-ingress"
 		}]
 	}
+
+	persistence: {
+		enabled:           false
+		storageClassName?: string
+		size?:             string
+	}
+
+	sidecar: {
+		datasources: {
+			enabled: true
+		}
+		dashboards: {
+			enabled: true
+			label:   "grafana_dashboard"
+			folder:  "default"
+		}
+	}
+
 }
 
 helmRelease: helmv2.#HelmRelease & {
