@@ -18,7 +18,11 @@ import (
 	adminUser:     string | *"admin"
 	adminPassword: string | *"admin"
 	prometheusURL: string | *"http://prometheus-stack-sofia-pro-prometheus.prometheus-stack.svc.cluster.local"
-	defaultDomain: string | *"grafana." + #workload.metadata.namespace + "." + #cluster.metadata.name + ".trashcloud.xyz"
+	defaultDomain: string | *"grafana.sofia.dockyards-2h8px.trashcloud.xyz"
+	cpuRequest:    string | *"100m"
+	cpuLimit:      string | *"200m"
+	memoryRequest: string | *"128Mi"
+	memoryLimit:   string | *"256Mi"
 }
 
 #cluster:  dockyardsv1.#Cluster
@@ -102,6 +106,16 @@ _values: apiextensionsv1.#JSON & {
 		}
 	}
 
+	resources: {
+		limits: {
+			cpu:    #workload.spec.input.cpuLimit
+			memory: #workload.spec.input.memoryLimit
+		}
+		requests: {
+			cpu:    #workload.spec.input.cpuRequest
+			memory: #workload.spec.input.memoryRequest
+		}
+	}
 }
 
 helmRelease: helmv2.#HelmRelease & {
