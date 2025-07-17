@@ -73,6 +73,9 @@ worktree: dockyardsv1.#Worktree & {
 }
 
 _values: apiextensionsv1.#JSON & {
+	nameOverride:     "gfn"
+	fullnameOverride: "grafana"
+
 	ingress: {
 		enabled:          true
 		ingressClassName: "nginx"
