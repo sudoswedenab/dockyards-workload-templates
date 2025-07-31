@@ -17,7 +17,7 @@ import (
 	version:       string | *"9.2.9"
 	adminUser:     string | *"admin"
 	adminPassword: string | *"admin"
-	prometheusURL: string | *"http://prometheus-stack-sofia2-pro-prometheus.prometheus-stack.svc.cluster.local"
+	prometheusURL: string | *"http://prometheus-stack-sofia2-pr-prometheus.prometheus-stack.svc.cluster.local:9090"
 	defaultDomain: string | *"grafana.sofia2.dockyards-2h8px.trashcloud.xyz"
 	cpuRequest:    string | *"100m"
 	cpuLimit:      string | *"200m"
@@ -29,9 +29,12 @@ import (
 	storageClassName:   string | *"cephfs"
 }
 
-#cluster:  dockyardsv1.#Cluster
-#workload: dockyardsv1.#Workload
-#workload: spec: input: #Input
+#cluster: dockyardsv1.#Cluster
+#workload: dockyardsv1.#Workload & {
+	spec: {
+		input: #Input
+	}
+}
 #ingressHost: #workload.spec.input.defaultDomain
 
 _namespace: corev1.#Namespace & {
@@ -55,7 +58,8 @@ worktree: dockyardsv1.#Worktree & {
 	}
 	spec: {
 		files: {
-			"namespace.yaml": '\(yaml.Marshal(_namespace))'
+			"namespace.yaml":          '\(yaml.Marshal(_namespace))'
+			"grafana-datasource.yaml": '\(yaml.Marshal(_grafanaDatasource))'
 		}
 	}
 }
@@ -137,6 +141,7 @@ _values: apiextensionsv1.#JSON & {
 	sidecar: {
 		datasources: {
 			enabled: true
+			label:   "grafana_datasource"
 		}
 		dashboards: {
 			enabled: true
@@ -157,34 +162,34 @@ _values: apiextensionsv1.#JSON & {
 	}
 }
 
-// grafanaDatasource: {
-//  apiVersion: "v1"
-//  kind:       "ConfigMap"
-//  metadata: {
-//      name:      "grafana-datasources"
-//      namespace: #workload.spec.targetNamespace
-//      labels: {
-//          grafana_datasource: "1"
-//      }
-//  }
-//  data: {
-//      "datasources.json": '''
-//          {
-//            "apiVersion": 1,
-//            "datasources": [
-//              {
-//                "name": "Prometheus",
-//                "type": "prometheus",
-//                "access": "proxy",
-//                "url": "%s",
-//                "isDefault": true
-//              }
-//            ]
-//          }
-//          '''
-//  }
-// }
-// 
+_grafanaDatasource: corev1.#ConfigMap & {
+	apiVersion: "v1"
+	kind:       "ConfigMap"
+	metadata: {
+		name:      "grafana-datasources"
+		namespace: #workload.spec.targetNamespace
+		labels: {
+			"grafana_datasource": "true"
+		}
+	}
+	data: {
+		"datasources.json": """
+    {
+      "apiVersion": 1,
+      "datasources": [
+        {
+          "name": "Prometheus",
+          "type": "prometheus",
+          "access": "proxy",
+          "url": "\(#workload.spec.input.prometheusURL)",
+          "isDefault": true
+        }
+      ]
+    }
+    """
+	}
+}
+
 // grafanaDashboard: {
 //  apiVersion: "v1"
 //  kind:       "ConfigMap"
