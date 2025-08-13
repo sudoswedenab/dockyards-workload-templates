@@ -60,6 +60,7 @@ worktree: dockyardsv1.#Worktree & {
 		files: {
 			"namespace.yaml":          '\(yaml.Marshal(_namespace))'
 			"grafana-datasource.yaml": '\(yaml.Marshal(_grafanaDatasource))'
+			"grafana-dashboard.yaml":  '\(yaml.Marshal(_grafanaDashboard))'
 		}
 	}
 }
@@ -144,9 +145,10 @@ _values: apiextensionsv1.#JSON & {
 			label:   "grafana_datasource"
 		}
 		dashboards: {
-			enabled: true
-			label:   "grafana_dashboard"
-			folder:  "default"
+			enabled:           true
+			label:             "grafana_dashboard"
+			labelValue:        "true"
+			defaultFolderName: "default"
 		}
 	}
 
@@ -190,45 +192,60 @@ _grafanaDatasource: corev1.#ConfigMap & {
 	}
 }
 
-// grafanaDashboard: {
-//  apiVersion: "v1"
-//  kind:       "ConfigMap"
-//  metadata: {
-//      name:      "grafana-dashboard-prometheus"
-//      namespace: #workload.spec.targetNamespace
-//      labels: {
-//          grafana_dashboard: "1"
-//      }
-//  }
-//  data: {
-//      "prometheus.json": '''
-//          {
-//              "id": null,
-//              "title": "Prometheus Example",
-//              "panels": [
-//                  {
-//                      "type": "graph",
-//                      "title": "Pod CPU Usage",
-//                      "targets": [
-//                          {
-//                              "expr": "sum(rate(container_cpu_usage_seconds_total{image!=''}[5m])) by (pod)",
-//                              "legendFormat": "{{pod}}",
-//                              "refId": "A"
-//                          }
-//                      ],
-//                      "datasource": "Prometheus",
-//                      "gridPos": {
-//                          "x": 0,
-//                          "y": 0,
-//                          "w": 12,
-//                          "h": 8
-//                      }
-//                  }
-//              ],
-//              "schemaVersion": 16,
-//              "version": 0
-//          }
-//          '''
-//  }
-//}
-//
+_grafanaDashboard: corev1.#ConfigMap & {
+	apiVersion: "v1"
+	kind:       "ConfigMap"
+	metadata: {
+		name:      "grafana-dashboard"
+		namespace: #workload.spec.targetNamespace
+		labels: {
+			"grafana_dashboard": "true"
+		}
+	}
+	data: {
+		"dashboard.json": """
+		{
+		  "id": null,
+		  "uid": "simple-dashboard",
+		  "title": "Pod Resource Usage",
+		  "schemaVersion": 36,
+		  "version": 1,
+		  "refresh": "30s",
+		  "panels": [
+		    {
+		      "type": "timeseries",
+		      "title": "CPU Usage per Pod",
+		      "targets": [
+		        {
+		          "expr": "rate(container_cpu_usage_seconds_total[5m])",
+		          "legendFormat": "{{pod}}",
+		          "refId": "A"
+		        }
+		      ],
+		      "datasource": {
+		        "type": "prometheus",
+		        "uid": "Prometheus"
+		      },
+		      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 8 }
+		    },
+		    {
+		      "type": "timeseries",
+		      "title": "Memory Usage per Pod",
+		      "targets": [
+		        {
+		          "expr": "sum by (pod) (container_memory_usage_bytes)",
+		          "legendFormat": "{{pod}}",
+		          "refId": "B"
+		        }
+		      ],
+		      "datasource": {
+		        "type": "prometheus",
+		        "uid": "Prometheus"
+		      },
+		      "gridPos": { "x": 0, "y": 9, "w": 24, "h": 8 }
+		    }
+		  ]
+		}
+		"""
+	}
+}
