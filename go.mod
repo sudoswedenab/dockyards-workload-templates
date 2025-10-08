@@ -8,9 +8,9 @@ tool (
 )
 
 require (
-	bitbucket.org/sudosweden/dockyards-backend/pkg/api v0.0.0-20250210124705-46af8f1a3d6e
 	cuelang.org/go v0.12.0
 	github.com/spf13/pflag v1.0.5
+	github.com/sudoswedenab/dockyards-backend/api v0.0.0-20250611070732-3e237ff5f82f
 	k8s.io/apimachinery v0.32.1
 	sigs.k8s.io/kustomize/api v0.17.0
 	sigs.k8s.io/yaml v1.4.0
@@ -60,7 +60,6 @@ require (
 	github.com/protocolbuffers/txtpbfmt v0.0.0-20241112170944-20d2c9ebc01d // indirect
 	github.com/rogpeppe/go-internal v1.13.2-0.20241226121412-a5dc8ff20d0a // indirect
 	github.com/spf13/cobra v1.8.1 // indirect
-	github.com/sudoswedenab/dockyards-backend/api v0.0.0-20250611070732-3e237ff5f82f // indirect
 	github.com/tetratelabs/wazero v1.6.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	golang.org/x/mod v0.22.0 // indirect
