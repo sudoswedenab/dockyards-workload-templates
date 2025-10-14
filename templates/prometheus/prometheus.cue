@@ -2,6 +2,8 @@ package template
 
 import (
 	"encoding/yaml"
+	"encoding/base64"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	dockyardsv1 "github.com/sudoswedenab/dockyards-backend/api/v1alpha3"
@@ -11,19 +13,97 @@ import (
 	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
 )
 
+#CpuQuantity:     string & =~"^([0-9]+(\\.[0-9]+)?)(m)?$"
+#MemoryQuantity:  string & =~"^([0-9]+(\\.[0-9]+)?)(Ki|Mi|Gi|Ti|Pi|Ei)?$"
+#StorageQuantity: string & =~"(^0|([0-9]*[.])?[0-9]+((K|M|G|T|E|P)i?)?B)$'"
+
 #RemoteWrite: {
-	url!: string
-	basic_auth?: {
-		username!: string
-		password!: string
+	basicAuth?: {
+		url!:        string
+		secretName!: string
+		username!:   string
+		password!:   string
 	}
 }
 
 #Input: {
-	repository: string | *"https://prometheus-community.github.io/helm-charts"
-	chart:      string | *"prometheus"
-	version:    string | *"26.0.0"
+	repository:         string | *"https://prometheus-community.github.io/helm-charts"
+	chart:              string | *"kube-prometheus-stack"
+	version:            string | *"67.11.0"
+	agentMode:          bool | *false
+	prometheusReplicas: int | *1
+	retentionSize:      #StorageQuantity | *"1GiB"
+	resources: {
+		requests: {
+			memory: #MemoryQuantity | *"256Mi"
+			cpu:    #CpuQuantity | *"250m"
+		}
+		limits: {
+			memory: #MemoryQuantity | *"1500Mi"
+			cpu:    #CpuQuantity | *"500m"
+		}
+	}
+
 	remoteWrite?: [...#RemoteWrite]
+}
+
+_secretList: [
+	for remoteWriteConfig in #workload.spec.input.remoteWrite {
+		corev1.#Secret
+		apiVersion: "v1"
+		kind:       "Secret"
+		metadata: {
+			name:      remoteWriteConfig.basicAuth.secretName
+			namespace: #workload.spec.targetNamespace
+		}
+		data: {
+			"username": '\(base64.Encode(null, remoteWriteConfig.basicAuth.username))'
+			"password": '\(base64.Encode(null, remoteWriteConfig.basicAuth.password))'
+		}
+	},
+]
+
+_values: apiextensionsv1.#JSON & {
+	alertmanager: enabled: false
+	grafana: enabled:      false
+	prometheus: {
+		agentMode: #workload.spec.input.agentMode
+		prometheusSpec: {
+			scrapeInterval:                      "30s"
+			evaluationInterval:                  "30s"
+			replicas:                            #workload.spec.input.prometheusReplicas
+			retentionSize:                       #workload.spec.input.retentionSize
+			podMonitorSelectorNilUsesHelmValues: false
+			podMonitorNamespaceSelector: {}
+			resources: {
+				requests: {
+					memory: #workload.spec.input.resources.requests.memory
+					cpu:    #workload.spec.input.resources.requests.cpu
+				}
+				limits: {
+					memory: #workload.spec.input.resources.limits.memory
+					cpu:    #workload.spec.input.resources.limits.cpu
+				}
+			}
+			if #workload.spec.input.remoteWrite != _|_ {
+				remoteWrite: [
+					for remoteWriteConfig in #workload.spec.input.remoteWrite {
+						url: remoteWriteConfig.basicAuth.url
+						basicAuth: {
+							username: {
+								name: remoteWriteConfig.basicAuth.secretName
+								key:  "username"
+							}
+							password: {
+								name: remoteWriteConfig.basicAuth.secretName
+								key:  "password"
+							}
+						}
+					},
+				]
+			}
+		}
+	}
 }
 
 #cluster: dockyardsv1.#Cluster
@@ -51,7 +131,14 @@ worktree: dockyardsv1.#Worktree & {
 		namespace: #workload.metadata.namespace
 	}
 	spec: {
-		files: "namespace.yaml": '\(yaml.Marshal(_namespace))'
+		files: {
+			"namespace.yaml": '\(yaml.Marshal(_namespace))'
+			"secrets.yaml":   '\(strings.Join([
+						for secret in _secretList {
+					"\(yaml.Marshal(secret))"
+				},
+			], "\n---\n"))'
+		}
 	}
 }
 
@@ -83,18 +170,6 @@ helmRepository: sourcev1.#HelmRepository & {
 	spec: {
 		url:      #workload.spec.input.repository
 		interval: "5m"
-	}
-}
-
-_values: apiextensionsv1.#JSON & {
-	alertmanager: enabled:             false
-	"prometheus-pushgateway": enabled: false
-	server: {
-		emptyDir: sizeLimit: "5Gi"
-		if #workload.spec.input.remoteWrite != _|_ {
-			remoteWrite: #workload.spec.input.remoteWrite
-		}
-		persistentVolume: enabled: false
 	}
 }
 
