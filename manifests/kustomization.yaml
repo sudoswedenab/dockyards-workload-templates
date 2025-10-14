@@ -28,5 +28,4 @@ resources:
 - workloadtemplate_openebsdynamiclocalpvprovisioner.yaml
 - workloadtemplate_podinfo.yaml
 - workloadtemplate_prometheus.yaml
-- workloadtemplate_prometheusstack.yaml
 - workloadtemplate_strimzikafka.yaml
