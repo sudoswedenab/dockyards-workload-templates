@@ -1,8 +1,6 @@
 name: ai-review
 on:
-  push:
-    branches:
-      - loki
+  pull_request:
 permissions:
   id-token: write
   contents: read
