@@ -1,0 +1,12 @@
+{
+  "remoteWrite": [
+    {
+      "basicAuth": {
+        "password": "ktd7hTWf7J",
+        "secretName": "vmuser-a4-prometheus",
+        "url": "http://10.91.240.34:8427/api/v1/write",
+        "username": "a4-prometheus"
+      }
+    }
+  ]
+}
