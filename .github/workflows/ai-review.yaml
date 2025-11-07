@@ -12,3 +12,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4.2.2
       - uses: sudoswedenab/sudo-actions/ai-review@feature/ai-review-test1
+        secrets: inherit
