@@ -1,0 +1,201 @@
+package template
+
+import (
+	"encoding/yaml"
+	"strings"
+
+	corev1 "k8s.io/api/core/v1"
+	dockyardsv1 "github.com/sudoswedenab/dockyards-backend/api/v1alpha3"
+	helmv2 "github.com/fluxcd/helm-controller/api/v2"
+	sourcev1 "github.com/fluxcd/source-controller/api/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
+)
+
+#CpuQuantity: string & =~"^([0-9]+(\\.[0-9]+)?)(m)?$"
+
+#MemoryQuantity: string & =~"^([0-9]+(\\.[0-9]+)?)(Ki|Mi|Gi|Ti|Pi|Ei)?$"
+
+// helm upgrade --install promtail grafana/promtail --version=6.16.4 -n promtail --values values.yaml
+
+#RemoteWrite: {
+	tenantID: string
+	mTLS: {
+		secretName: string
+		url:        string
+		cert:       string
+		key:        string
+	}
+}
+
+#Input: {
+	repository: string | *"https://grafana.github.io/helm-charts"
+	chart:      string | *"promtail"
+	version:    string | *"6.16.4"
+	resources: {
+		requests: {
+			memory: #MemoryQuantity | *"256Mi"
+			cpu:    #CpuQuantity | *"250m"
+		}
+		limits: {
+			memory: #MemoryQuantity | *"1500Mi"
+			cpu:    #CpuQuantity | *"500m"
+		}
+	}
+
+	remoteWrite: [...#RemoteWrite] | *[]
+}
+
+_secretList: [
+	for remoteWriteConfig in #workload.spec.input.remoteWrite {
+		corev1.#Secret
+		apiVersion: "v1"
+		kind:       "Secret"
+		metadata: {
+			name:      remoteWriteConfig.mTLS.secretName
+			namespace: #workload.spec.targetNamespace
+		}
+		type: "kubernetes.io/tls"
+		data: {
+			"tls.crt": '\(remoteWriteConfig.mTLS.cert)'
+			"tls.key": '\(remoteWriteConfig.mTLS.key)'
+		}
+	},
+]
+
+_values: apiextensionsv1.#JSON & {
+	for remoteWriteConfig in #workload.spec.input.remoteWrite {
+		extraVolumes: [
+			{
+				name: "promtail-client-cert-" + remoteWriteConfig.mTLS.secretName
+				secret:
+					secretName: remoteWriteConfig.mTLS.secretName
+			},
+		]
+		extraVolumeMounts: [
+			{
+				name:      "promtail-client-cert-" + remoteWriteConfig.mTLS.secretName
+				mountPath: "/etc/promtail/certs/" + remoteWriteConfig.mTLS.secretName
+				readOnly:  true
+			},
+		]
+	}
+	config: {
+		clients: [
+			for remoteWriteConfig in #workload.spec.input.remoteWrite {
+				url:       remoteWriteConfig.mTLS.url
+				tenant_id: remoteWriteConfig.tenantID
+				tls_config: {
+					cert_file:            "/etc/promtail/certs/" + remoteWriteConfig.mTLS.secretName + "/tls.crt"
+					key_file:             "/etc/promtail/certs/" + remoteWriteConfig.mTLS.secretName + "/tls.key"
+					insecure_skip_verify: false
+				}
+			},
+		]
+		daemonset: enabled:  true
+		deployment: enabled: false
+		snippets: extraRelabelConfigs: [
+			{
+				action: "replace"
+				source_labels: [
+					"__meta_kubernetes_pod_label_app_kubernetes_io_part_of",
+				]
+				target_label: "part_of"
+			},
+		]
+	}
+}
+
+#cluster: dockyardsv1.#Cluster
+
+#workload: dockyardsv1.#Workload
+#workload: spec: input: #Input
+
+_namespace: corev1.#Namespace & {
+	apiVersion: "v1"
+	kind:       "Namespace"
+	metadata: {
+		name: #workload.spec.targetNamespace
+		labels: {
+			"pod-security.kubernetes.io/enforce":         "privileged"
+			"pod-security.kubernetes.io/enforce-version": "latest"
+		}
+	}
+}
+
+worktree: dockyardsv1.#Worktree & {
+	apiVersion: "dockyards.io/v1alpha3"
+	kind:       dockyardsv1.#WorktreeKind
+	metadata: {
+		name:      #workload.metadata.name
+		namespace: #workload.metadata.namespace
+	}
+	spec: {
+		files: {
+			"namespace.yaml": '\(yaml.Marshal(_namespace))'
+			"secrets.yaml":   '\(strings.Join([
+						for secret in _secretList {
+					"\(yaml.Marshal(secret))"
+				},
+			], "\n---\n"))'
+		}
+	}
+}
+
+kustomization: kustomizev1.#Kustomization & {
+	apiVersion: "kustomize.toolkit.fluxcd.io/v1"
+	kind:       kustomizev1.#KustomizationKind
+	metadata: {
+		name:      #workload.metadata.name
+		namespace: #workload.metadata.namespace
+	}
+	spec: {
+		interval: "5m"
+		kubeConfig: secretRef: name: #cluster.metadata.name + "-kubeconfig"
+		prune: true
+		sourceRef: {
+			kind: sourcev1.#GitRepositoryKind
+			name: #workload.metadata.name
+		}
+	}
+}
+
+helmRepository: sourcev1.#HelmRepository & {
+	apiVersion: "source.toolkit.fluxcd.io/v1"
+	kind:       sourcev1.#HelmRepositoryKind
+	metadata: {
+		name:      #workload.metadata.name
+		namespace: #workload.metadata.namespace
+	}
+	spec: {
+		url:      #workload.spec.input.repository
+		interval: "5m"
+	}
+}
+
+helmRelease: helmv2.#HelmRelease & {
+	apiVersion: "helm.toolkit.fluxcd.io/v2"
+	kind:       helmv2.#HelmReleaseKind
+	metadata: {
+		name:      #workload.metadata.name
+		namespace: #workload.metadata.namespace
+	}
+	spec: {
+		chart: {
+			spec: {
+				chart:   #workload.spec.input.chart
+				version: #workload.spec.input.version
+				sourceRef: {
+					kind: helmRepository.kind
+					name: helmRepository.metadata.name
+				}
+			}
+		}
+		install: remediation: retries: -1
+		interval: "5m"
+		kubeConfig: secretRef: name: #cluster.metadata.name + "-kubeconfig"
+		storageNamespace: #workload.spec.targetNamespace
+		targetNamespace:  #workload.spec.targetNamespace
+		values:           _values
+	}
+}
