@@ -34,7 +34,7 @@ import (
 #workload: dockyardsv1.#Workload
 #workload: spec: input: #Input
 
-#ingressHost: #workload.spec.targetNamespace + "." + #cluster.metadata.name + #workload.spec.input.domain
+#ingressHost: #workload.spec.targetNamespace + #workload.spec.input.domain
 
 helmRepository: sourcev1.#HelmRepository & {
 	apiVersion: "source.toolkit.fluxcd.io/v1"
