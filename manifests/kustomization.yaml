@@ -20,6 +20,7 @@ resources:
 - workloadtemplate_certmanager.yaml
 - workloadtemplate_cloudproviderforclouddirector.yaml
 - workloadtemplate_containerimage.yaml
+- workloadtemplate_corednsk8sgateway.yaml
 - workloadtemplate_externaldns.yaml
 - workloadtemplate_gitrepository.yaml
 - workloadtemplate_helmchart.yaml
