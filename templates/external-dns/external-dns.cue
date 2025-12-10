@@ -56,6 +56,17 @@ _deployment: appsv1.#Deployment & {
 						name:  k
 						value: v
 					},
+					if #workload.spec.input.credentials["pdnsApiKey"] != _|_ {
+						{
+							name: "EXTERNAL_DNS_PDNS_API_KEY"
+							valueFrom: {
+								secretKeyRef: {
+									name: "external-dns"
+									key:  "pdnsApiKey"
+								}
+							}
+						}
+					},
 				]
 				name: "external-dns"
 				volumeMounts: [
