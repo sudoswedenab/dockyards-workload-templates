@@ -15,7 +15,7 @@ import (
 	url!:            string & =~"^(http?s|ssh)://.*$"
 	ref!:            #Ref
 	path:            string | *"."
-	interval:        string & "^([0-9]+(\\.[0-9]+)?(ms|s|m|h))+$" | *"5m"
+	interval:        string & =~"^([0-9]+(\\.[0-9]+)?(ms|s|m|h))+$" | *"5m"
 	createNamespace: bool | *true
 }
 
