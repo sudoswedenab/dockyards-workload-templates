@@ -30,4 +30,5 @@ resources:
 - workloadtemplate_podinfo.yaml
 - workloadtemplate_prometheus.yaml
 - workloadtemplate_promtail.yaml
+- workloadtemplate_rbac.yaml
 - workloadtemplate_strimzikafka.yaml
