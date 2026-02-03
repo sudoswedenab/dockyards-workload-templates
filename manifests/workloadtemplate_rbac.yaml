@@ -1,0 +1,152 @@
+# Copyright 2025 Sudo Sweden AB
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: dockyards.io/v1alpha3
+kind: WorkloadTemplate
+metadata:
+  name: rbac
+spec:
+  source: |
+    package template
+
+    import (
+      "encoding/yaml"
+      "strings"
+
+      dockyardsv1 "github.com/sudoswedenab/dockyards-backend/api/v1alpha3"
+      kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
+      sourcev1 "github.com/fluxcd/source-controller/api/v1"
+    )
+
+    #RoleRef: {
+      apiGroup: "rbac.authorization.k8s.io"
+      kind:     "Role" | "ClusterRole"
+      name:     string
+    }
+
+    #RoleBindingSubject: {
+      apiGroup:  "rbac.authorization.k8s.io"
+      kind:      "User" | "Group" | "ServiceAccount"
+      name:      string
+      namespace: ""
+    }
+
+    #RoleBinding: {
+      bindingName: string
+      roleRef:     #RoleRef
+      subjects: [...#RoleBindingSubject]
+      namespace: string
+    }
+
+    #Input: {
+      clusterRoleBindings: [...#RoleBinding] | *[]
+      roleBindings: [...#RoleBinding] | *[]
+    }
+
+    #cluster:  dockyardsv1.#Cluster
+    #workload: dockyardsv1.#Workload
+
+    #workload: spec: input: #Input
+
+    _clusterRoleBindingList: [
+      for clusterRoleBinding in #workload.spec.input.clusterRoleBindings {
+        apiVersion: "rbac.authorization.k8s.io/v1"
+        kind:       "ClusterRoleBinding"
+        metadata: name: clusterRoleBinding.bindingName
+        roleRef: {
+          apiGroup: clusterRoleBinding.roleRef.apiGroup
+          kind:     clusterRoleBinding.roleRef.kind
+          name:     clusterRoleBinding.roleRef.name
+        }
+        subjects: [
+          for subject in clusterRoleBinding.subjects {
+            kind:      subject.kind
+            apiGroup:  subject.apiGroup
+            name:      subject.name
+            namespace: subject.namespace
+          },
+        ]
+      },
+    ]
+
+    _roleBindingList: [
+      for roleBinding in #workload.spec.input.roleBindings {
+        apiVersion: "rbac.authorization.k8s.io/v1"
+        kind:       "RoleBinding"
+        metadata: {
+          name:      roleBinding.bindingName
+          namespace: roleBinding.namespace
+        }
+        roleRef: {
+          apiGroup: roleBinding.roleRef.apiGroup
+          kind:     roleBinding.roleRef.kind
+          name:     roleBinding.roleRef.name
+        }
+        subjects: [
+          for subject in roleBinding.subjects {
+            kind:      subject.kind
+            apiGroup:  subject.apiGroup
+            name:      subject.name
+            namespace: subject.namespace
+          },
+        ]
+      },
+    ]
+
+    worktree: dockyardsv1.#Worktree & {
+      apiVersion: "dockyards.io/v1alpha3"
+      kind:       dockyardsv1.#WorktreeKind
+      metadata: {
+        name:      #workload.metadata.name
+        namespace: #workload.metadata.namespace
+      }
+      spec: files: {
+        if _clusterRoleBindingList != [] {
+          "clusterrolebindings.yaml": '\(strings.Join([
+                                      for clusterRoleBinding in _clusterRoleBindingList {
+              "\(yaml.Marshal(clusterRoleBinding))"
+            },
+          ], "\n---\n"))'
+        }
+        if _roleBindingList != [] {
+          "rolebindings.yaml": '\(strings.Join([
+                                for roleBinding in _roleBindingList {
+              "\(yaml.Marshal(roleBinding))"
+            },
+          ], "\n---\n"))'
+        }
+      }
+    }
+
+    kustomization: kustomizev1.#Kustomization & {
+      apiVersion: "kustomize.toolkit.fluxcd.io/v1"
+      kind:       kustomizev1.#KustomizationKind
+      metadata: {
+        name:      #workload.metadata.name
+        namespace: #workload.metadata.namespace
+      }
+      spec: {
+        interval:      "1m"
+        wait:          true
+        retryInterval: "15s"
+        kubeConfig: secretRef: name: #cluster.metadata.name + "-kubeconfig"
+        targetNamespace: #workload.spec.targetNamespace
+        prune:           true
+        sourceRef: {
+          kind: sourcev1.#GitRepositoryKind
+          name: #workload.metadata.name
+        }
+      }
+    }
+  type: dockyards.io/cue
