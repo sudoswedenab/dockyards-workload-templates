@@ -7,25 +7,13 @@ import (
 	dockyardsv1 "github.com/sudoswedenab/dockyards-backend/api/v1alpha3"
 	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 )
-
-#RoleRef: {
-	apiGroup: "rbac.authorization.k8s.io"
-	kind:     "Role" | "ClusterRole"
-	name:     string
-}
-
-#RoleBindingSubject: {
-	apiGroup:  "rbac.authorization.k8s.io"
-	kind:      "User" | "Group" | "ServiceAccount"
-	name:      string
-	namespace: ""
-}
 
 #RoleBinding: {
 	bindingName: string
-	roleRef:     #RoleRef
-	subjects: [...#RoleBindingSubject]
+	roleRef:     rbacv1.#RoleRef
+	subjects: [...rbacv1.#Subject]
 	namespace: string
 }
 
@@ -41,24 +29,14 @@ import (
 
 _clusterRoleBindingList: [
 	for clusterRoleBinding in #workload.spec.input.clusterRoleBindings {
+		rbacv1.#ClusterRoleBinding
 		apiVersion: "rbac.authorization.k8s.io/v1"
 		kind:       "ClusterRoleBinding"
 		metadata: {
 			name: clusterRoleBinding.bindingName
 		}
-		roleRef: {
-			apiGroup: clusterRoleBinding.roleRef.apiGroup
-			kind:     clusterRoleBinding.roleRef.kind
-			name:     clusterRoleBinding.roleRef.name
-		}
-		subjects: [
-			for subject in clusterRoleBinding.subjects {
-				kind:      subject.kind
-				apiGroup:  subject.apiGroup
-				name:      subject.name
-				namespace: subject.namespace
-			},
-		]
+		roleRef:  clusterRoleBinding.roleRef
+		subjects: clusterRoleBinding.subjects
 	},
 ]
 
@@ -70,19 +48,8 @@ _roleBindingList: [
 			name:      roleBinding.bindingName
 			namespace: roleBinding.namespace
 		}
-		roleRef: {
-			apiGroup: roleBinding.roleRef.apiGroup
-			kind:     roleBinding.roleRef.kind
-			name:     roleBinding.roleRef.name
-		}
-		subjects: [
-			for subject in roleBinding.subjects {
-				kind:      subject.kind
-				apiGroup:  subject.apiGroup
-				name:      subject.name
-				namespace: subject.namespace
-			},
-		]
+		roleRef:  roleBinding.roleRef
+		subjects: roleBinding.subjects
 	},
 ]
 
