@@ -9,7 +9,7 @@ import (
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
 )
 
-#Ref: {branch: string} | {tag: string} | {commit: string} | {name: string}
+#Ref: {branch: string} | {tag: string} | {semver: string} | {name: string} | {commit: string}
 
 #Input: {
 	url!:            string & =~"^(http?s|ssh)://.*$"
