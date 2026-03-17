@@ -12,6 +12,7 @@ import (
 #HelmChartKind: "HelmChart"
 
 // HelmChartSpec specifies the desired state of a Helm chart.
+// +kubebuilder:validation:XValidation:rule="!has(self.verify) || self.sourceRef.kind == 'HelmRepository'",message="spec.verify is only supported when spec.sourceRef.kind is 'HelmRepository'"
 #HelmChartSpec: {
 	// Chart is the name or path the Helm chart is available at in the
 	// SourceRef.
@@ -131,7 +132,7 @@ import (
 
 	// Artifact represents the output of the last successful reconciliation.
 	// +optional
-	artifact?: null | #Artifact @go(Artifact,*Artifact)
+	artifact?: null | meta.#Artifact @go(Artifact,*meta.Artifact)
 
 	meta.#ReconcileRequestStatus
 }

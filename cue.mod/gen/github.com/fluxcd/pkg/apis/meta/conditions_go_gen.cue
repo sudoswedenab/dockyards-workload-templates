@@ -102,6 +102,18 @@ package meta
 // the reconciliation failed.
 #ReconciliationFailedReason: "ReconciliationFailed"
 
+// InvalidCELExpressionReason represents the fact that a CEL expression
+// in the configuration is invalid.
+#InvalidCELExpressionReason: "InvalidCELExpression"
+
+// FeatureGateDisabledReason represents the fact that a feature is trying to
+// be used, but the feature gate for that feature is disabled.
+#FeatureGateDisabledReason: "FeatureGateDisabled"
+
+// HealthCheckCanceledReason represents the fact that
+// the health check was canceled.
+#HealthCheckCanceledReason: "HealthCheckCanceled"
+
 // ObjectWithConditions describes a Kubernetes resource object with status conditions.
 // +k8s:deepcopy-gen=false
 #ObjectWithConditions: _
