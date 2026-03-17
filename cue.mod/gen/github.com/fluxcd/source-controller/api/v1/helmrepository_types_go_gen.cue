@@ -13,10 +13,6 @@ import (
 // HelmRepositoryKind is the string representation of a HelmRepository.
 #HelmRepositoryKind: "HelmRepository"
 
-// HelmRepositoryURLIndexKey is the key used for indexing HelmRepository
-// objects by their HelmRepositorySpec.URL.
-#HelmRepositoryURLIndexKey: ".metadata.helmRepositoryURL"
-
 // HelmRepositoryTypeDefault is the default HelmRepository type.
 // It is used when no type is specified and corresponds to a Helm repository.
 #HelmRepositoryTypeDefault: "default"
@@ -136,7 +132,7 @@ import (
 
 	// Artifact represents the last successful HelmRepository reconciliation.
 	// +optional
-	artifact?: null | #Artifact @go(Artifact,*Artifact)
+	artifact?: null | meta.#Artifact @go(Artifact,*meta.Artifact)
 
 	meta.#ReconcileRequestStatus
 }

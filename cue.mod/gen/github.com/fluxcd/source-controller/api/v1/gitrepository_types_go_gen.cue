@@ -20,6 +20,10 @@ import (
 // repositories using Managed Identity.
 #GitProviderAzure: "azure"
 
+// GitProviderGitHub provides support for authentication to git
+// repositories using GitHub App authentication
+#GitProviderGitHub: "github"
+
 // IncludeUnavailableCondition indicates one of the includes is not
 // available. For example, because it does not exist, or does not have an
 // Artifact.
@@ -49,6 +53,7 @@ import (
 
 // GitRepositorySpec specifies the required configuration to produce an
 // Artifact for a Git repository.
+// +kubebuilder:validation:XValidation:rule="!has(self.serviceAccountName) || (has(self.provider) && self.provider == 'azure')",message="serviceAccountName can only be set when provider is 'azure'"
 #GitRepositorySpec: {
 	// URL specifies the Git repository URL, it can be an HTTP/S or SSH address.
 	// +kubebuilder:validation:Pattern="^(http|https|ssh)://.*$"
@@ -64,11 +69,16 @@ import (
 	// +optional
 	secretRef?: null | meta.#LocalObjectReference @go(SecretRef,*meta.LocalObjectReference)
 
-	// Provider used for authentication, can be 'azure', 'generic'.
+	// Provider used for authentication, can be 'azure', 'github', 'generic'.
 	// When not specified, defaults to 'generic'.
-	// +kubebuilder:validation:Enum=generic;azure
+	// +kubebuilder:validation:Enum=generic;azure;github
 	// +optional
 	provider?: string @go(Provider)
+
+	// ServiceAccountName is the name of the Kubernetes ServiceAccount used to
+	// authenticate to the GitRepository. This field is only supported for 'azure' provider.
+	// +optional
+	serviceAccountName?: string @go(ServiceAccountName)
 
 	// Interval at which the GitRepository URL is checked for updates.
 	// This interval is approximate and may be subject to jitter to ensure
@@ -120,6 +130,12 @@ import (
 	// should be included in the Artifact produced for this GitRepository.
 	// +optional
 	include?: [...#GitRepositoryInclude] @go(Include,[]GitRepositoryInclude)
+
+	// SparseCheckout specifies a list of directories to checkout when cloning
+	// the repository. If specified, only these directories are included in the
+	// Artifact produced for this GitRepository.
+	// +optional
+	sparseCheckout?: [...string] @go(SparseCheckout,[]string)
 }
 
 // GitRepositoryInclude specifies a local reference to a GitRepository which
@@ -202,12 +218,12 @@ import (
 
 	// Artifact represents the last successful GitRepository reconciliation.
 	// +optional
-	artifact?: null | #Artifact @go(Artifact,*Artifact)
+	artifact?: null | meta.#Artifact @go(Artifact,*meta.Artifact)
 
 	// IncludedArtifacts contains a list of the last successfully included
 	// Artifacts as instructed by GitRepositorySpec.Include.
 	// +optional
-	includedArtifacts?: [...null | #Artifact] @go(IncludedArtifacts,[]*Artifact)
+	includedArtifacts?: [...meta.#Artifact] @go(IncludedArtifacts,[]*meta.Artifact)
 
 	// ObservedIgnore is the observed exclusion patterns used for constructing
 	// the source artifact.
@@ -223,6 +239,11 @@ import (
 	// produce the current Artifact.
 	// +optional
 	observedInclude?: [...#GitRepositoryInclude] @go(ObservedInclude,[]GitRepositoryInclude)
+
+	// ObservedSparseCheckout is the observed list of directories used to
+	// produce the current Artifact.
+	// +optional
+	observedSparseCheckout?: [...string] @go(ObservedSparseCheckout,[]string)
 
 	// SourceVerificationMode is the last used verification mode indicating
 	// which Git object(s) have been verified.
