@@ -22,6 +22,20 @@ spec:
 
     import "encoding/yaml"
 
+    #Input: {
+      url!:              =~"^(http?s|ssh)://.*$"
+      ref!:              #Ref
+      path:              string | *"."
+      interval:          string & =~"^([0-9]+(\\.[0-9]+)?(ms|s|m|h))+$" | *"5m"
+      timeout?:          string & =~"^([0-9]+(\\.[0-9]+)?(ms|s|m|h))+$" | *"60s"
+      recurseSubmodules: bool | *false
+      provider:          "generic" | "azure" | "github" | *"generic"
+      sparseCheckout?: [...string]
+      secretRef?:          null | LOCALOBJECTREFERENCE.#x
+      proxySecretRef?:     null | LOCALOBJECTREFERENCE.#x
+      serviceAccountName?: null | LOCALOBJECTREFERENCE.#x
+      createNamespace:     bool | *true
+    }
     #Ref: {
       branch: string
     } | {
@@ -32,13 +46,6 @@ spec:
       name: string
     } | {
       commit: string
-    }
-    #Input: {
-      url!:            =~"^(http?s|ssh)://.*$"
-      ref!:            #Ref
-      path:            string | *"."
-      interval:        string & =~"^([0-9]+(\\.[0-9]+)?(ms|s|m|h))+$" | *"5m"
-      createNamespace: bool | *true
     }
     #cluster:  CLUSTER.#x
     #workload: WORKLOAD.#x
@@ -87,9 +94,16 @@ spec:
         namespace: #workload.metadata.namespace
       }
       spec: {
-        interval: "5m"
-        url:      #workload.spec.input.url
-        ref:      #workload.spec.input.ref
+        url:                #workload.spec.input.url
+        provider:           #workload.spec.input.provider
+        interval:           #workload.spec.input.interval
+        timeout:            #workload.spec.input.timeout
+        recurseSubmodules:  #workload.spec.input.recurseSubmodules
+        sparseCheckout:     #workload.spec.input.sparseCheckout
+        ref:                #workload.spec.input.ref
+        secretRef:          #workload.spec.input.secretRef
+        proxySecretRef:     #workload.spec.input.proxySecretRef
+        serviceAccountName: #workload.spec.input.serviceAccountName
       }
     }
     kustomization: KUSTOMIZATION.#x & {
@@ -106,6 +120,7 @@ spec:
           }]
         }
         interval: #workload.spec.input.interval
+        timeout:  #workload.spec.input.timeout
         kubeConfig: secretRef: name: #cluster.metadata.name + "-kubeconfig"
         prune:         true
         path:          #workload.spec.input.path
@@ -115,6 +130,13 @@ spec:
           name: gitRepository.metadata.name
         }
         targetNamespace: #workload.spec.targetNamespace
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#LocalObjectReference
+    let LOCALOBJECTREFERENCE = {
+      #x: {
+        name: string @go(Name)
       }
     }
 
@@ -489,13 +511,6 @@ spec:
       #x: {
         provider:   string                         @go(Provider)
         secretRef?: null | LOCALOBJECTREFERENCE.#x @go(SecretRef,*meta.LocalObjectReference)
-      }
-    }
-
-    //cue:path: "github.com/fluxcd/pkg/apis/meta".#LocalObjectReference
-    let LOCALOBJECTREFERENCE = {
-      #x: {
-        name: string @go(Name)
       }
     }
 
