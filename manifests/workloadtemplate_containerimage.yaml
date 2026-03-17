@@ -20,38 +20,26 @@ spec:
   source: |
     package template
 
-    import (
-      "encoding/yaml"
-
-      dockyardsv1 "github.com/sudoswedenab/dockyards-backend/api/v1alpha3"
-      appsv1 "k8s.io/api/apps/v1"
-      kustomize "sigs.k8s.io/kustomize/api/types"
-      corev1 "k8s.io/api/core/v1"
-      kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
-      sourcev1 "github.com/fluxcd/source-controller/api/v1"
-      networkingv1 "k8s.io/api/networking/v1"
-    )
+    import "encoding/yaml"
 
     #Input: {
-      image!:   string & =~"^[a-z0-9]+((\\.|_|__|-+)[a-z0-9]+)*(\/[a-z0-9]+((\\.|_|__|-+)[a-z0-9]+)*)*$"
+      image!:   =~"^[a-z0-9]+((\\.|_|__|-+)[a-z0-9]+)*(/[a-z0-9]+((\\.|_|__|-+)[a-z0-9]+)*)*$"
       tag:      string & =~"^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}$" | *"latest"
-      replicas: uint | *1
+      replicas: int & >=0 | *1
       port?:    uint16
       host?:    string
     }
-
-    #cluster: dockyardsv1.#Cluster
-
-    #workload: dockyardsv1.#Workload
-    #workload: spec: input: #Input
-
-    _namespace: corev1.#Namespace & {
+    #cluster:  CLUSTER.#x
+    #workload: WORKLOAD.#x
+    #workload: {
+      spec: input: #Input
+    }
+    _namespace: NAMESPACE.#x & {
       apiVersion: "v1"
       kind:       "Namespace"
       metadata: name: #workload.spec.targetNamespace
     }
-
-    _deployment: appsv1.#Deployment & {
+    _deployment: DEPLOYMENT.#x & {
       apiVersion: "apps/v1"
       kind:       "Deployment"
       metadata: {
@@ -63,24 +51,20 @@ spec:
         selector: matchLabels: "app.kubernetes.io/name": #workload.metadata.name
         template: {
           metadata: labels: "app.kubernetes.io/name": #workload.metadata.name
-          spec: containers: [
+          spec: containers: [{
+            name:  #workload.metadata.name
+            image: "\(#workload.spec.input.image):\(#workload.spec.input.tag)"
+            if #workload.spec.input.port != _|_ // explicit error (_|_ literal) in source
             {
-              name:  #workload.metadata.name
-              image: "\(#workload.spec.input.image):\(#workload.spec.input.tag)"
-              if #workload.spec.input.port != _|_ {
-                ports: [
-                  {
-                    containerPort: #workload.spec.input.port
-                  },
-                ]
-              }
-            },
-          ]
+              ports: [{
+                containerPort: #workload.spec.input.port
+              }]
+            }
+          }]
         }
       }
     }
-
-    _service: corev1.#Service & {
+    _service: SERVICE.#x & {
       apiVersion: "v1"
       kind:       "Service"
       metadata: {
@@ -88,80 +72,75 @@ spec:
         namespace: _namespace.metadata.name
       }
       spec: {
-        ports: [
-          {
-            port:       #workload.spec.input.port
-            targetPort: #workload.spec.input.port
-          },
-        ]
+        ports: [{
+          port:       #workload.spec.input.port
+          targetPort: #workload.spec.input.port
+        }]
         selector: "app.kubernetes.io/name": #workload.metadata.name
       }
     }
-
-    _ingress: networkingv1.#Ingress & {
+    _ingress: INGRESS.#x & {
       apiVersion: "networking.k8s.io/v1"
       kind:       "Ingress"
       metadata: {
         name:      #workload.metadata.name
         namespace: _namespace.metadata.name
       }
-      spec: rules: [
-        {
-          host: #workload.spec.input.host
-          http: paths: [
-            {
-              path:     "/"
-              pathType: networkingv1.#PathTypePrefix
-              backend: service: {
-                name: #workload.metadata.name
-                port: number: #workload.spec.input.port
-              }
-            },
-          ]
-        },
-      ]
+      spec: rules: [{
+        host: #workload.spec.input.host
+        http: paths: [{
+          path:     "/"
+          pathType: PATHTYPEPREFIX.#x
+          backend: service: {
+            name: #workload.metadata.name
+            port: number: #workload.spec.input.port
+          }
+        }]
+      }]
     }
-
     _resources: {
       "namespace.yaml":  '\(yaml.Marshal(_namespace))'
       "deployment.yaml": '\(yaml.Marshal(_deployment))'
     }
 
-    if #workload.spec.input.port != _|_ {
-      _resources: "service.yaml": '\(yaml.Marshal(_service))'
+    if #workload.spec.input.port != _|_ // explicit error (_|_ literal) in source
+    {
+      _resources: {
+        "service.yaml": '\(yaml.Marshal(_service))'
+      }
 
-      if #workload.spec.input.host != _|_ {
-        _resources: "ingress.yaml": '\(yaml.Marshal(_ingress))'
+      if #workload.spec.input.host != _|_ // explicit error (_|_ literal) in source
+      {
+        _resources: {
+          "ingress.yaml": '\(yaml.Marshal(_ingress))'
+        }
       }
     }
-
-    _kustomization: kustomize.#Kustomization & {
+    _kustomization: KUSTOMIZATION.#x & {
       resources: [
         for key, val in _resources {
           "\(key)"
-        },
-      ]
+        }]
     }
-
-    worktree: dockyardsv1.#Worktree & {
+    worktree: WORKTREE.#x & {
       apiVersion: "dockyards.io/v1alpha3"
-      kind:       dockyardsv1.#WorktreeKind
+      kind:       WORKTREEKIND.#x
       metadata: {
         name:      #workload.metadata.name
         namespace: #workload.metadata.namespace
       }
-      spec: files: "kustomization.yaml": '\(yaml.Marshal(_kustomization))'
       spec: files: {
-        for key, val in _resources {
-          "\(key)": val
+        {
+          for key, val in _resources {
+            "\(key)": val
+          }
         }
+        "kustomization.yaml": '\(yaml.Marshal(_kustomization))'
       }
-
     }
-
-    kustomization: kustomizev1.#Kustomization & {
+    kustomization: KUSTOMIZATION_1.#x & {
       apiVersion: "kustomize.toolkit.fluxcd.io/v1"
-      kind:       kustomizev1.#KustomizationKind
+      kind:       KUSTOMIZATIONKIND.#x
       metadata: {
         name:      #workload.metadata.name
         namespace: #workload.metadata.namespace
@@ -171,10 +150,2469 @@ spec:
         kubeConfig: secretRef: name: #cluster.metadata.name + "-kubeconfig"
         prune: true
         sourceRef: {
-          kind: sourcev1.#GitRepositoryKind
+          kind: GITREPOSITORYKIND.#x
           name: worktree.metadata.name
         }
         targetNamespace: _namespace.metadata.name
       }
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#Cluster
+    let CLUSTER = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x    @go(ObjectMeta)
+        spec?:     CLUSTERSPEC.#x   @go(Spec)
+        status?:   CLUSTERSTATUS.#x @go(Status)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#TypeMeta
+    let TYPEMETA = {
+      #x: {
+        kind?:       string @go(Kind) @protobuf(1,bytes,opt)
+        apiVersion?: string @go(APIVersion) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#ObjectMeta
+    let OBJECTMETA = {
+      #x: {
+        name?:                       string  @go(Name) @protobuf(1,bytes,opt)
+        generateName?:               string  @go(GenerateName) @protobuf(2,bytes,opt)
+        namespace?:                  string  @go(Namespace) @protobuf(3,bytes,opt)
+        selfLink?:                   string  @go(SelfLink) @protobuf(4,bytes,opt)
+        uid?:                        UID.#x  @go(UID) @protobuf(5,bytes,opt,casttype=k8s.io/kubernetes/pkg/types.UID)
+        resourceVersion?:            string  @go(ResourceVersion) @protobuf(6,bytes,opt)
+        generation?:                 int64   @go(Generation) @protobuf(7,varint,opt)
+        creationTimestamp?:          TIME.#x @go(CreationTimestamp) @protobuf(8,bytes,opt)
+        deletionTimestamp?:          TIME.#x @go(DeletionTimestamp,*Time) @protobuf(9,bytes,opt)
+        deletionGracePeriodSeconds?: int64   @go(DeletionGracePeriodSeconds,*int64) @protobuf(10,varint,opt)
+        labels?: {
+          [string]: string
+        } @go(Labels,map[string]string) @protobuf(11,bytes,rep)
+        annotations?: {
+          [string]: string
+        } @go(Annotations,map[string]string) @protobuf(12,bytes,rep)
+        ownerReferences?: [...OWNERREFERENCE.#x] @go(OwnerReferences,[]OwnerReference) @protobuf(13,bytes,rep)
+        finalizers?: [...string] @go(Finalizers,[]string) @protobuf(14,bytes,rep)
+        managedFields?: [...MANAGEDFIELDSENTRY.#x] @go(ManagedFields,[]ManagedFieldsEntry) @protobuf(17,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/types".#UID
+    let UID = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#Time
+    let TIME = {
+      #x: _
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#OwnerReference
+    let OWNERREFERENCE = {
+      #x: {
+        apiVersion:          string @go(APIVersion) @protobuf(5,bytes,opt)
+        kind:                string @go(Kind) @protobuf(1,bytes,opt)
+        name:                string @go(Name) @protobuf(3,bytes,opt)
+        uid:                 UID.#x @go(UID) @protobuf(4,bytes,opt,casttype=k8s.io/apimachinery/pkg/types.UID)
+        controller?:         bool   @go(Controller,*bool) @protobuf(6,varint,opt)
+        blockOwnerDeletion?: bool   @go(BlockOwnerDeletion,*bool) @protobuf(7,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#ManagedFieldsEntry
+    let MANAGEDFIELDSENTRY = {
+      #x: {
+        manager?:     string                        @go(Manager) @protobuf(1,bytes,opt)
+        operation?:   MANAGEDFIELDSOPERATIONTYPE.#x @go(Operation) @protobuf(2,bytes,opt,casttype=ManagedFieldsOperationType)
+        apiVersion?:  string                        @go(APIVersion) @protobuf(3,bytes,opt)
+        time?:        TIME.#x                       @go(Time,*Time) @protobuf(4,bytes,opt)
+        fieldsType?:  string                        @go(FieldsType) @protobuf(6,bytes,opt)
+        fieldsV1?:    FIELDSV1.#x                   @go(FieldsV1,*FieldsV1) @protobuf(7,bytes,opt)
+        subresource?: string                        @go(Subresource) @protobuf(8,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#ManagedFieldsOperationType
+    let MANAGEDFIELDSOPERATIONTYPE = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#FieldsV1
+    let FIELDSV1 = {
+      #x: _
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#ClusterSpec
+    let CLUSTERSPEC = {
+      #x: {
+        version?:                  string @go(Version)
+        noDefaultIngressProvider?: bool   @go(NoDefaultIngressProvider)
+        upgrades?: [...CLUSTERUPGRADE.#x] @go(Upgrades,[]ClusterUpgrade)
+        blockDeletion?:          bool                                @go(BlockDeletion)
+        allocateInternalIP?:     bool                                @go(AllocateInternalIP)
+        ipPoolRef?:              null | TYPEDLOCALOBJECTREFERENCE.#x @go(IPPoolRef,*corev1.TypedLocalObjectReference)
+        duration?:               null | DURATION.#x                  @go(Duration,*metav1.Duration)
+        noDefaultNetworkPlugin?: bool                                @go(NoDefaultNetworkPlugin)
+        podSubnets?: [...string] @go(PodSubnets,[]string)
+        serviceSubnets?: [...string] @go(ServiceSubnets,[]string)
+      }
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#ClusterUpgrade
+    let CLUSTERUPGRADE = {
+      #x: {
+        to: string @go(To)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#TypedLocalObjectReference
+    let TYPEDLOCALOBJECTREFERENCE = {
+      #x: {
+        apiGroup?: null | string @go(APIGroup,*string) @protobuf(1,bytes,opt)
+        kind:      string        @go(Kind) @protobuf(2,bytes,opt)
+        name:      string        @go(Name) @protobuf(3,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#Duration
+    let DURATION = {
+      #x: _
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#ClusterStatus
+    let CLUSTERSTATUS = {
+      #x: {
+        conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition)
+        clusterServiceID?: string @go(ClusterServiceID)
+        version?:          string @go(Version)
+        dnsZones?: [...string] @go(DNSZones,[]string)
+        apiEndpoint?:         CLUSTERAPIENDPOINT.#x @go(APIEndpoint)
+        expirationTimestamp?: null | TIME.#x        @go(ExpirationTimestamp,*metav1.Time)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#Condition
+    let CONDITION = {
+      #x: {
+        type:                string             @go(Type) @protobuf(1,bytes,opt)
+        status:              CONDITIONSTATUS.#x @go(Status) @protobuf(2,bytes,opt)
+        observedGeneration?: int64              @go(ObservedGeneration) @protobuf(3,varint,opt)
+        lastTransitionTime:  TIME.#x            @go(LastTransitionTime) @protobuf(4,bytes,opt)
+        reason:              string             @go(Reason) @protobuf(5,bytes,opt)
+        message:             string             @go(Message) @protobuf(6,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#ConditionStatus
+    let CONDITIONSTATUS = {
+      #x: string
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#ClusterAPIEndpoint
+    let CLUSTERAPIENDPOINT = {
+      #x: {
+        host: string @go(Host)
+        port: int32  @go(Port)
+      }
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#Workload
+    let WORKLOAD = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x     @go(ObjectMeta)
+        spec?:     WORKLOADSPEC.#x   @go(Spec)
+        status?:   WORKLOADSTATUS.#x @go(Status)
+      }
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#WorkloadSpec
+    let WORKLOADSPEC = {
+      #x: {
+        clusterComponent?:      bool                           @go(ClusterComponent)
+        targetNamespace:        string                         @go(TargetNamespace)
+        workloadTemplateInput?: null | JSON.#x                 @go(WorkloadTemplateInput,*apiextensionsv1.JSON)
+        input?:                 null | JSON.#x                 @go(Input,*apiextensionsv1.JSON)
+        workloadTemplateRef?:   null | TYPEDOBJECTREFERENCE.#x @go(WorkloadTemplateRef,*corev1.TypedObjectReference)
+        provenience:            string                         @go(Provenience)
+      }
+    }
+
+    //cue:path: "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1".#JSON
+    let JSON = {
+      #x: _
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#TypedObjectReference
+    let TYPEDOBJECTREFERENCE = {
+      #x: {
+        apiGroup?:  null | string @go(APIGroup,*string) @protobuf(1,bytes,opt)
+        kind:       string        @go(Kind) @protobuf(2,bytes,opt)
+        name:       string        @go(Name) @protobuf(3,bytes,opt)
+        namespace?: null | string @go(Namespace,*string) @protobuf(4,bytes,opt)
+      }
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#WorkloadStatus
+    let WORKLOADSTATUS = {
+      #x: {
+        conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition)
+        dependencyRefs?: [...TYPEDLOCALOBJECTREFERENCE.#x] @go(DependencyRefs,[]corev1.TypedLocalObjectReference)
+        urls?: [...string] @go(URLs,[]string)
+        references?: [...WORKLOADREFERENCE.#x] @go(References,[]WorkloadReference)
+      }
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#WorkloadReference
+    let WORKLOADREFERENCE = {
+      #x: {
+        TYPEDOBJECTREFERENCE.#x
+        parent?: null | TYPEDLOCALOBJECTREFERENCE.#x @go(Parent,*corev1.TypedLocalObjectReference)
+        urls?: [...string] @go(URLs,[]string)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#Namespace
+    let NAMESPACE = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x      @go(ObjectMeta) @protobuf(1,bytes,opt)
+        spec?:     NAMESPACESPEC.#x   @go(Spec) @protobuf(2,bytes,opt)
+        status?:   NAMESPACESTATUS.#x @go(Status) @protobuf(3,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#NamespaceSpec
+    let NAMESPACESPEC = {
+      #x: {
+        finalizers?: [...FINALIZERNAME.#x] @go(Finalizers,[]FinalizerName) @protobuf(1,bytes,rep,casttype=FinalizerName)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#FinalizerName
+    let FINALIZERNAME = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#NamespaceStatus
+    let NAMESPACESTATUS = {
+      #x: {
+        phase?: NAMESPACEPHASE.#x @go(Phase) @protobuf(1,bytes,opt,casttype=NamespacePhase)
+        conditions?: [...NAMESPACECONDITION.#x] @go(Conditions,[]NamespaceCondition) @protobuf(2,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#NamespacePhase
+    let NAMESPACEPHASE = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#NamespaceCondition
+    let NAMESPACECONDITION = {
+      #x: {
+        type:                NAMESPACECONDITIONTYPE.#x @go(Type) @protobuf(1,bytes,opt,casttype=NamespaceConditionType)
+        status:              CONDITIONSTATUS_1.#x      @go(Status) @protobuf(2,bytes,opt,casttype=ConditionStatus)
+        lastTransitionTime?: TIME.#x                   @go(LastTransitionTime) @protobuf(4,bytes,opt)
+        reason?:             string                    @go(Reason) @protobuf(5,bytes,opt)
+        message?:            string                    @go(Message) @protobuf(6,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#NamespaceConditionType
+    let NAMESPACECONDITIONTYPE = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ConditionStatus
+    let CONDITIONSTATUS_1 = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/apps/v1".#Deployment
+    let DEPLOYMENT = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x       @go(ObjectMeta) @protobuf(1,bytes,opt)
+        spec?:     DEPLOYMENTSPEC.#x   @go(Spec) @protobuf(2,bytes,opt)
+        status?:   DEPLOYMENTSTATUS.#x @go(Status) @protobuf(3,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/apps/v1".#DeploymentSpec
+    let DEPLOYMENTSPEC = {
+      #x: {
+        replicas?:                null | int32            @go(Replicas,*int32) @protobuf(1,varint,opt)
+        selector?:                null | LABELSELECTOR.#x @go(Selector,*metav1.LabelSelector) @protobuf(2,bytes,opt)
+        template:                 PODTEMPLATESPEC.#x      @go(Template) @protobuf(3,bytes,opt)
+        strategy?:                DEPLOYMENTSTRATEGY.#x   @go(Strategy) @protobuf(4,bytes,opt)
+        minReadySeconds?:         int32                   @go(MinReadySeconds) @protobuf(5,varint,opt)
+        revisionHistoryLimit?:    null | int32            @go(RevisionHistoryLimit,*int32) @protobuf(6,varint,opt)
+        paused?:                  bool                    @go(Paused) @protobuf(7,varint,opt)
+        progressDeadlineSeconds?: null | int32            @go(ProgressDeadlineSeconds,*int32) @protobuf(9,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#LabelSelector
+    let LABELSELECTOR = {
+      #x: {
+        matchLabels?: {
+          [string]: string
+        } @go(MatchLabels,map[string]string) @protobuf(1,bytes,rep)
+        matchExpressions?: [...LABELSELECTORREQUIREMENT.#x] @go(MatchExpressions,[]LabelSelectorRequirement) @protobuf(2,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#LabelSelectorRequirement
+    let LABELSELECTORREQUIREMENT = {
+      #x: {
+        key:      string                   @go(Key) @protobuf(1,bytes,opt)
+        operator: LABELSELECTOROPERATOR.#x @go(Operator) @protobuf(2,bytes,opt,casttype=LabelSelectorOperator)
+        values?: [...string] @go(Values,[]string) @protobuf(3,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#LabelSelectorOperator
+    let LABELSELECTOROPERATOR = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#PodTemplateSpec
+    let PODTEMPLATESPEC = {
+      #x: {
+        metadata?: OBJECTMETA.#x @go(ObjectMeta) @protobuf(1,bytes,opt)
+        spec?:     PODSPEC.#x    @go(Spec) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#PodSpec
+    let PODSPEC = {
+      #x: {
+        volumes?: [...VOLUME.#x] @go(Volumes,[]Volume) @protobuf(1,bytes,rep)
+        initContainers?: [...CONTAINER.#x] @go(InitContainers,[]Container) @protobuf(20,bytes,rep)
+        containers: [...CONTAINER.#x] @go(Containers,[]Container) @protobuf(2,bytes,rep)
+        ephemeralContainers?: [...EPHEMERALCONTAINER.#x] @go(EphemeralContainers,[]EphemeralContainer) @protobuf(34,bytes,rep)
+        restartPolicy?:                 RESTARTPOLICY.#x @go(RestartPolicy) @protobuf(3,bytes,opt,casttype=RestartPolicy)
+        terminationGracePeriodSeconds?: null | int64     @go(TerminationGracePeriodSeconds,*int64) @protobuf(4,varint,opt)
+        activeDeadlineSeconds?:         null | int64     @go(ActiveDeadlineSeconds,*int64) @protobuf(5,varint,opt)
+        dnsPolicy?:                     DNSPOLICY.#x     @go(DNSPolicy) @protobuf(6,bytes,opt,casttype=DNSPolicy)
+        nodeSelector?: {
+          [string]: string
+        } @go(NodeSelector,map[string]string) @protobuf(7,bytes,rep)
+        serviceAccountName?:           string                       @go(ServiceAccountName) @protobuf(8,bytes,opt)
+        serviceAccount?:               string                       @go(DeprecatedServiceAccount) @protobuf(9,bytes,opt)
+        automountServiceAccountToken?: null | bool                  @go(AutomountServiceAccountToken,*bool) @protobuf(21,varint,opt)
+        nodeName?:                     string                       @go(NodeName) @protobuf(10,bytes,opt)
+        hostNetwork?:                  bool                         @go(HostNetwork) @protobuf(11,varint,opt)
+        hostPID?:                      bool                         @go(HostPID) @protobuf(12,varint,opt)
+        hostIPC?:                      bool                         @go(HostIPC) @protobuf(13,varint,opt)
+        shareProcessNamespace?:        null | bool                  @go(ShareProcessNamespace,*bool) @protobuf(27,varint,opt)
+        securityContext?:              null | PODSECURITYCONTEXT.#x @go(SecurityContext,*PodSecurityContext) @protobuf(14,bytes,opt)
+        imagePullSecrets?: [...LOCALOBJECTREFERENCE.#x] @go(ImagePullSecrets,[]LocalObjectReference) @protobuf(15,bytes,rep)
+        hostname?:      string             @go(Hostname) @protobuf(16,bytes,opt)
+        subdomain?:     string             @go(Subdomain) @protobuf(17,bytes,opt)
+        affinity?:      null | AFFINITY.#x @go(Affinity,*Affinity) @protobuf(18,bytes,opt)
+        schedulerName?: string             @go(SchedulerName) @protobuf(19,bytes,opt)
+        tolerations?: [...TOLERATION.#x] @go(Tolerations,[]Toleration) @protobuf(22,bytes,opt)
+        hostAliases?: [...HOSTALIAS.#x] @go(HostAliases,[]HostAlias) @protobuf(23,bytes,rep)
+        priorityClassName?: string                 @go(PriorityClassName) @protobuf(24,bytes,opt)
+        priority?:          null | int32           @go(Priority,*int32) @protobuf(25,bytes,opt)
+        dnsConfig?:         null | PODDNSCONFIG.#x @go(DNSConfig,*PodDNSConfig) @protobuf(26,bytes,opt)
+        readinessGates?: [...PODREADINESSGATE.#x] @go(ReadinessGates,[]PodReadinessGate) @protobuf(28,bytes,opt)
+        runtimeClassName?:   null | string              @go(RuntimeClassName,*string) @protobuf(29,bytes,opt)
+        enableServiceLinks?: null | bool                @go(EnableServiceLinks,*bool) @protobuf(30,varint,opt)
+        preemptionPolicy?:   null | PREEMPTIONPOLICY.#x @go(PreemptionPolicy,*PreemptionPolicy) @protobuf(31,bytes,opt)
+        overhead?:           RESOURCELIST.#x            @go(Overhead) @protobuf(32,bytes,opt)
+        topologySpreadConstraints?: [...TOPOLOGYSPREADCONSTRAINT.#x] @go(TopologySpreadConstraints,[]TopologySpreadConstraint) @protobuf(33,bytes,opt)
+        setHostnameAsFQDN?: null | bool     @go(SetHostnameAsFQDN,*bool) @protobuf(35,varint,opt)
+        os?:                null | PODOS.#x @go(OS,*PodOS) @protobuf(36,bytes,opt)
+        hostUsers?:         null | bool     @go(HostUsers,*bool) @protobuf(37,bytes,opt)
+        schedulingGates?: [...PODSCHEDULINGGATE.#x] @go(SchedulingGates,[]PodSchedulingGate) @protobuf(38,bytes,opt)
+        resourceClaims?: [...PODRESOURCECLAIM.#x] @go(ResourceClaims,[]PodResourceClaim) @protobuf(39,bytes,rep)
+        resources?: null | RESOURCEREQUIREMENTS.#x @go(Resources,*ResourceRequirements) @protobuf(40,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#Volume
+    let VOLUME = {
+      #x: {
+        VOLUMESOURCE.#x
+        name: string @go(Name) @protobuf(1,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#VolumeSource
+    let VOLUMESOURCE = {
+      #x: {
+        hostPath?:              null | HOSTPATHVOLUMESOURCE.#x              @go(HostPath,*HostPathVolumeSource) @protobuf(1,bytes,opt)
+        emptyDir?:              null | EMPTYDIRVOLUMESOURCE.#x              @go(EmptyDir,*EmptyDirVolumeSource) @protobuf(2,bytes,opt)
+        gcePersistentDisk?:     null | GCEPERSISTENTDISKVOLUMESOURCE.#x     @go(GCEPersistentDisk,*GCEPersistentDiskVolumeSource) @protobuf(3,bytes,opt)
+        awsElasticBlockStore?:  null | AWSELASTICBLOCKSTOREVOLUMESOURCE.#x  @go(AWSElasticBlockStore,*AWSElasticBlockStoreVolumeSource) @protobuf(4,bytes,opt)
+        gitRepo?:               null | GITREPOVOLUMESOURCE.#x               @go(GitRepo,*GitRepoVolumeSource) @protobuf(5,bytes,opt)
+        secret?:                null | SECRETVOLUMESOURCE.#x                @go(Secret,*SecretVolumeSource) @protobuf(6,bytes,opt)
+        nfs?:                   null | NFSVOLUMESOURCE.#x                   @go(NFS,*NFSVolumeSource) @protobuf(7,bytes,opt)
+        iscsi?:                 null | ISCSIVOLUMESOURCE.#x                 @go(ISCSI,*ISCSIVolumeSource) @protobuf(8,bytes,opt)
+        glusterfs?:             null | GLUSTERFSVOLUMESOURCE.#x             @go(Glusterfs,*GlusterfsVolumeSource) @protobuf(9,bytes,opt)
+        persistentVolumeClaim?: null | PERSISTENTVOLUMECLAIMVOLUMESOURCE.#x @go(PersistentVolumeClaim,*PersistentVolumeClaimVolumeSource) @protobuf(10,bytes,opt)
+        rbd?:                   null | RBDVOLUMESOURCE.#x                   @go(RBD,*RBDVolumeSource) @protobuf(11,bytes,opt)
+        flexVolume?:            null | FLEXVOLUMESOURCE.#x                  @go(FlexVolume,*FlexVolumeSource) @protobuf(12,bytes,opt)
+        cinder?:                null | CINDERVOLUMESOURCE.#x                @go(Cinder,*CinderVolumeSource) @protobuf(13,bytes,opt)
+        cephfs?:                null | CEPHFSVOLUMESOURCE.#x                @go(CephFS,*CephFSVolumeSource) @protobuf(14,bytes,opt)
+        flocker?:               null | FLOCKERVOLUMESOURCE.#x               @go(Flocker,*FlockerVolumeSource) @protobuf(15,bytes,opt)
+        downwardAPI?:           null | DOWNWARDAPIVOLUMESOURCE.#x           @go(DownwardAPI,*DownwardAPIVolumeSource) @protobuf(16,bytes,opt)
+        fc?:                    null | FCVOLUMESOURCE.#x                    @go(FC,*FCVolumeSource) @protobuf(17,bytes,opt)
+        azureFile?:             null | AZUREFILEVOLUMESOURCE.#x             @go(AzureFile,*AzureFileVolumeSource) @protobuf(18,bytes,opt)
+        configMap?:             null | CONFIGMAPVOLUMESOURCE.#x             @go(ConfigMap,*ConfigMapVolumeSource) @protobuf(19,bytes,opt)
+        vsphereVolume?:         null | VSPHEREVIRTUALDISKVOLUMESOURCE.#x    @go(VsphereVolume,*VsphereVirtualDiskVolumeSource) @protobuf(20,bytes,opt)
+        quobyte?:               null | QUOBYTEVOLUMESOURCE.#x               @go(Quobyte,*QuobyteVolumeSource) @protobuf(21,bytes,opt)
+        azureDisk?:             null | AZUREDISKVOLUMESOURCE.#x             @go(AzureDisk,*AzureDiskVolumeSource) @protobuf(22,bytes,opt)
+        photonPersistentDisk?:  null | PHOTONPERSISTENTDISKVOLUMESOURCE.#x  @go(PhotonPersistentDisk,*PhotonPersistentDiskVolumeSource) @protobuf(23,bytes,opt)
+        projected?:             null | PROJECTEDVOLUMESOURCE.#x             @go(Projected,*ProjectedVolumeSource) @protobuf(26,bytes,opt)
+        portworxVolume?:        null | PORTWORXVOLUMESOURCE.#x              @go(PortworxVolume,*PortworxVolumeSource) @protobuf(24,bytes,opt)
+        scaleIO?:               null | SCALEIOVOLUMESOURCE.#x               @go(ScaleIO,*ScaleIOVolumeSource) @protobuf(25,bytes,opt)
+        storageos?:             null | STORAGEOSVOLUMESOURCE.#x             @go(StorageOS,*StorageOSVolumeSource) @protobuf(27,bytes,opt)
+        csi?:                   null | CSIVOLUMESOURCE.#x                   @go(CSI,*CSIVolumeSource) @protobuf(28,bytes,opt)
+        ephemeral?:             null | EPHEMERALVOLUMESOURCE.#x             @go(Ephemeral,*EphemeralVolumeSource) @protobuf(29,bytes,opt)
+        image?:                 null | IMAGEVOLUMESOURCE.#x                 @go(Image,*ImageVolumeSource) @protobuf(30,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#HostPathVolumeSource
+    let HOSTPATHVOLUMESOURCE = {
+      #x: {
+        path:  string                 @go(Path) @protobuf(1,bytes,opt)
+        type?: null | HOSTPATHTYPE.#x @go(Type,*HostPathType) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#HostPathType
+    let HOSTPATHTYPE = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#EmptyDirVolumeSource
+    let EMPTYDIRVOLUMESOURCE = {
+      #x: {
+        medium?:    STORAGEMEDIUM.#x   @go(Medium) @protobuf(1,bytes,opt,casttype=StorageMedium)
+        sizeLimit?: null | QUANTITY.#x @go(SizeLimit,*resource.Quantity) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#StorageMedium
+    let STORAGEMEDIUM = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/api/resource".#Quantity
+    let QUANTITY = {
+      #x: _
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#GCEPersistentDiskVolumeSource
+    let GCEPERSISTENTDISKVOLUMESOURCE = {
+      #x: {
+        pdName:     string @go(PDName) @protobuf(1,bytes,opt)
+        fsType?:    string @go(FSType) @protobuf(2,bytes,opt)
+        partition?: int32  @go(Partition) @protobuf(3,varint,opt)
+        readOnly?:  bool   @go(ReadOnly) @protobuf(4,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#AWSElasticBlockStoreVolumeSource
+    let AWSELASTICBLOCKSTOREVOLUMESOURCE = {
+      #x: {
+        volumeID:   string @go(VolumeID) @protobuf(1,bytes,opt)
+        fsType?:    string @go(FSType) @protobuf(2,bytes,opt)
+        partition?: int32  @go(Partition) @protobuf(3,varint,opt)
+        readOnly?:  bool   @go(ReadOnly) @protobuf(4,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#GitRepoVolumeSource
+    let GITREPOVOLUMESOURCE = {
+      #x: {
+        repository: string @go(Repository) @protobuf(1,bytes,opt)
+        revision?:  string @go(Revision) @protobuf(2,bytes,opt)
+        directory?: string @go(Directory) @protobuf(3,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#SecretVolumeSource
+    let SECRETVOLUMESOURCE = {
+      #x: {
+        secretName?: string @go(SecretName) @protobuf(1,bytes,opt)
+        items?: [...KEYTOPATH.#x] @go(Items,[]KeyToPath) @protobuf(2,bytes,rep)
+        defaultMode?: null | int32 @go(DefaultMode,*int32) @protobuf(3,bytes,opt)
+        optional?:    null | bool  @go(Optional,*bool) @protobuf(4,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#KeyToPath
+    let KEYTOPATH = {
+      #x: {
+        key:   string       @go(Key) @protobuf(1,bytes,opt)
+        path:  string       @go(Path) @protobuf(2,bytes,opt)
+        mode?: null | int32 @go(Mode,*int32) @protobuf(3,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#NFSVolumeSource
+    let NFSVOLUMESOURCE = {
+      #x: {
+        server:    string @go(Server) @protobuf(1,bytes,opt)
+        path:      string @go(Path) @protobuf(2,bytes,opt)
+        readOnly?: bool   @go(ReadOnly) @protobuf(3,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ISCSIVolumeSource
+    let ISCSIVOLUMESOURCE = {
+      #x: {
+        targetPortal:    string @go(TargetPortal) @protobuf(1,bytes,opt)
+        iqn:             string @go(IQN) @protobuf(2,bytes,opt)
+        lun:             int32  @go(Lun) @protobuf(3,varint,opt)
+        iscsiInterface?: string @go(ISCSIInterface) @protobuf(4,bytes,opt)
+        fsType?:         string @go(FSType) @protobuf(5,bytes,opt)
+        readOnly?:       bool   @go(ReadOnly) @protobuf(6,varint,opt)
+        portals?: [...string] @go(Portals,[]string) @protobuf(7,bytes,opt)
+        chapAuthDiscovery?: bool                           @go(DiscoveryCHAPAuth) @protobuf(8,varint,opt)
+        chapAuthSession?:   bool                           @go(SessionCHAPAuth) @protobuf(11,varint,opt)
+        secretRef?:         null | LOCALOBJECTREFERENCE.#x @go(SecretRef,*LocalObjectReference) @protobuf(10,bytes,opt)
+        initiatorName?:     null | string                  @go(InitiatorName,*string) @protobuf(12,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#LocalObjectReference
+    let LOCALOBJECTREFERENCE = {
+      #x: {
+        name?: string @go(Name) @protobuf(1,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#GlusterfsVolumeSource
+    let GLUSTERFSVOLUMESOURCE = {
+      #x: {
+        endpoints: string @go(EndpointsName) @protobuf(1,bytes,opt)
+        path:      string @go(Path) @protobuf(2,bytes,opt)
+        readOnly?: bool   @go(ReadOnly) @protobuf(3,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#PersistentVolumeClaimVolumeSource
+    let PERSISTENTVOLUMECLAIMVOLUMESOURCE = {
+      #x: {
+        claimName: string @go(ClaimName) @protobuf(1,bytes,opt)
+        readOnly?: bool   @go(ReadOnly) @protobuf(2,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#RBDVolumeSource
+    let RBDVOLUMESOURCE = {
+      #x: {
+        monitors: [...string] @go(CephMonitors,[]string) @protobuf(1,bytes,rep)
+        image:      string                         @go(RBDImage) @protobuf(2,bytes,opt)
+        fsType?:    string                         @go(FSType) @protobuf(3,bytes,opt)
+        pool?:      string                         @go(RBDPool) @protobuf(4,bytes,opt)
+        user?:      string                         @go(RadosUser) @protobuf(5,bytes,opt)
+        keyring?:   string                         @go(Keyring) @protobuf(6,bytes,opt)
+        secretRef?: null | LOCALOBJECTREFERENCE.#x @go(SecretRef,*LocalObjectReference) @protobuf(7,bytes,opt)
+        readOnly?:  bool                           @go(ReadOnly) @protobuf(8,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#FlexVolumeSource
+    let FLEXVOLUMESOURCE = {
+      #x: {
+        driver:     string                         @go(Driver) @protobuf(1,bytes,opt)
+        fsType?:    string                         @go(FSType) @protobuf(2,bytes,opt)
+        secretRef?: null | LOCALOBJECTREFERENCE.#x @go(SecretRef,*LocalObjectReference) @protobuf(3,bytes,opt)
+        readOnly?:  bool                           @go(ReadOnly) @protobuf(4,varint,opt)
+        options?: {
+          [string]: string
+        } @go(Options,map[string]string) @protobuf(5,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#CinderVolumeSource
+    let CINDERVOLUMESOURCE = {
+      #x: {
+        volumeID:   string                         @go(VolumeID) @protobuf(1,bytes,opt)
+        fsType?:    string                         @go(FSType) @protobuf(2,bytes,opt)
+        readOnly?:  bool                           @go(ReadOnly) @protobuf(3,varint,opt)
+        secretRef?: null | LOCALOBJECTREFERENCE.#x @go(SecretRef,*LocalObjectReference) @protobuf(4,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#CephFSVolumeSource
+    let CEPHFSVOLUMESOURCE = {
+      #x: {
+        monitors: [...string] @go(Monitors,[]string) @protobuf(1,bytes,rep)
+        path?:       string                         @go(Path) @protobuf(2,bytes,opt)
+        user?:       string                         @go(User) @protobuf(3,bytes,opt)
+        secretFile?: string                         @go(SecretFile) @protobuf(4,bytes,opt)
+        secretRef?:  null | LOCALOBJECTREFERENCE.#x @go(SecretRef,*LocalObjectReference) @protobuf(5,bytes,opt)
+        readOnly?:   bool                           @go(ReadOnly) @protobuf(6,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#FlockerVolumeSource
+    let FLOCKERVOLUMESOURCE = {
+      #x: {
+        datasetName?: string @go(DatasetName) @protobuf(1,bytes,opt)
+        datasetUUID?: string @go(DatasetUUID) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#DownwardAPIVolumeSource
+    let DOWNWARDAPIVOLUMESOURCE = {
+      #x: {
+        items?: [...DOWNWARDAPIVOLUMEFILE.#x] @go(Items,[]DownwardAPIVolumeFile) @protobuf(1,bytes,rep)
+        defaultMode?: null | int32 @go(DefaultMode,*int32) @protobuf(2,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#DownwardAPIVolumeFile
+    let DOWNWARDAPIVOLUMEFILE = {
+      #x: {
+        path:              string                          @go(Path) @protobuf(1,bytes,opt)
+        fieldRef?:         null | OBJECTFIELDSELECTOR.#x   @go(FieldRef,*ObjectFieldSelector) @protobuf(2,bytes,opt)
+        resourceFieldRef?: null | RESOURCEFIELDSELECTOR.#x @go(ResourceFieldRef,*ResourceFieldSelector) @protobuf(3,bytes,opt)
+        mode?:             null | int32                    @go(Mode,*int32) @protobuf(4,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ObjectFieldSelector
+    let OBJECTFIELDSELECTOR = {
+      #x: {
+        apiVersion?: string @go(APIVersion) @protobuf(1,bytes,opt)
+        fieldPath:   string @go(FieldPath) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ResourceFieldSelector
+    let RESOURCEFIELDSELECTOR = {
+      #x: {
+        containerName?: string      @go(ContainerName) @protobuf(1,bytes,opt)
+        resource:       string      @go(Resource) @protobuf(2,bytes,opt)
+        divisor?:       QUANTITY.#x @go(Divisor) @protobuf(3,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#FCVolumeSource
+    let FCVOLUMESOURCE = {
+      #x: {
+        targetWWNs?: [...string] @go(TargetWWNs,[]string) @protobuf(1,bytes,rep)
+        lun?:      null | int32 @go(Lun,*int32) @protobuf(2,varint,opt)
+        fsType?:   string       @go(FSType) @protobuf(3,bytes,opt)
+        readOnly?: bool         @go(ReadOnly) @protobuf(4,varint,opt)
+        wwids?: [...string] @go(WWIDs,[]string) @protobuf(5,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#AzureFileVolumeSource
+    let AZUREFILEVOLUMESOURCE = {
+      #x: {
+        secretName: string @go(SecretName) @protobuf(1,bytes,opt)
+        shareName:  string @go(ShareName) @protobuf(2,bytes,opt)
+        readOnly?:  bool   @go(ReadOnly) @protobuf(3,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ConfigMapVolumeSource
+    let CONFIGMAPVOLUMESOURCE = {
+      #x: {
+        LOCALOBJECTREFERENCE.#x
+        items?: [...KEYTOPATH.#x] @go(Items,[]KeyToPath) @protobuf(2,bytes,rep)
+        defaultMode?: null | int32 @go(DefaultMode,*int32) @protobuf(3,varint,opt)
+        optional?:    null | bool  @go(Optional,*bool) @protobuf(4,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#VsphereVirtualDiskVolumeSource
+    let VSPHEREVIRTUALDISKVOLUMESOURCE = {
+      #x: {
+        volumePath:         string @go(VolumePath) @protobuf(1,bytes,opt)
+        fsType?:            string @go(FSType) @protobuf(2,bytes,opt)
+        storagePolicyName?: string @go(StoragePolicyName) @protobuf(3,bytes,opt)
+        storagePolicyID?:   string @go(StoragePolicyID) @protobuf(4,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#QuobyteVolumeSource
+    let QUOBYTEVOLUMESOURCE = {
+      #x: {
+        registry:  string @go(Registry) @protobuf(1,bytes,opt)
+        volume:    string @go(Volume) @protobuf(2,bytes,opt)
+        readOnly?: bool   @go(ReadOnly) @protobuf(3,varint,opt)
+        user?:     string @go(User) @protobuf(4,bytes,opt)
+        group?:    string @go(Group) @protobuf(5,bytes,opt)
+        tenant?:   string @go(Tenant) @protobuf(6,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#AzureDiskVolumeSource
+    let AZUREDISKVOLUMESOURCE = {
+      #x: {
+        diskName:     string                             @go(DiskName) @protobuf(1,bytes,opt)
+        diskURI:      string                             @go(DataDiskURI) @protobuf(2,bytes,opt)
+        cachingMode?: null | AZUREDATADISKCACHINGMODE.#x @go(CachingMode,*AzureDataDiskCachingMode) @protobuf(3,bytes,opt,casttype=AzureDataDiskCachingMode)
+        fsType?:      null | string                      @go(FSType,*string) @protobuf(4,bytes,opt)
+        readOnly?:    null | bool                        @go(ReadOnly,*bool) @protobuf(5,varint,opt)
+        kind?:        null | AZUREDATADISKKIND.#x        @go(Kind,*AzureDataDiskKind) @protobuf(6,bytes,opt,casttype=AzureDataDiskKind)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#AzureDataDiskCachingMode
+    let AZUREDATADISKCACHINGMODE = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#AzureDataDiskKind
+    let AZUREDATADISKKIND = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#PhotonPersistentDiskVolumeSource
+    let PHOTONPERSISTENTDISKVOLUMESOURCE = {
+      #x: {
+        pdID:    string @go(PdID) @protobuf(1,bytes,opt)
+        fsType?: string @go(FSType) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ProjectedVolumeSource
+    let PROJECTEDVOLUMESOURCE = {
+      #x: {
+        sources?: [...VOLUMEPROJECTION.#x] @go(Sources,[]VolumeProjection) @protobuf(1,bytes,rep)
+        defaultMode?: null | int32 @go(DefaultMode,*int32) @protobuf(2,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#VolumeProjection
+    let VOLUMEPROJECTION = {
+      #x: {
+        secret?:              null | SECRETPROJECTION.#x              @go(Secret,*SecretProjection) @protobuf(1,bytes,opt)
+        downwardAPI?:         null | DOWNWARDAPIPROJECTION.#x         @go(DownwardAPI,*DownwardAPIProjection) @protobuf(2,bytes,opt)
+        configMap?:           null | CONFIGMAPPROJECTION.#x           @go(ConfigMap,*ConfigMapProjection) @protobuf(3,bytes,opt)
+        serviceAccountToken?: null | SERVICEACCOUNTTOKENPROJECTION.#x @go(ServiceAccountToken,*ServiceAccountTokenProjection) @protobuf(4,bytes,opt)
+        clusterTrustBundle?:  null | CLUSTERTRUSTBUNDLEPROJECTION.#x  @go(ClusterTrustBundle,*ClusterTrustBundleProjection) @protobuf(5,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#SecretProjection
+    let SECRETPROJECTION = {
+      #x: {
+        LOCALOBJECTREFERENCE.#x
+        items?: [...KEYTOPATH.#x] @go(Items,[]KeyToPath) @protobuf(2,bytes,rep)
+        optional?: null | bool @go(Optional,*bool) @protobuf(4,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#DownwardAPIProjection
+    let DOWNWARDAPIPROJECTION = {
+      #x: {
+        items?: [...DOWNWARDAPIVOLUMEFILE.#x] @go(Items,[]DownwardAPIVolumeFile) @protobuf(1,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ConfigMapProjection
+    let CONFIGMAPPROJECTION = {
+      #x: {
+        LOCALOBJECTREFERENCE.#x
+        items?: [...KEYTOPATH.#x] @go(Items,[]KeyToPath) @protobuf(2,bytes,rep)
+        optional?: null | bool @go(Optional,*bool) @protobuf(4,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ServiceAccountTokenProjection
+    let SERVICEACCOUNTTOKENPROJECTION = {
+      #x: {
+        audience?:          string       @go(Audience) @protobuf(1,bytes,rep)
+        expirationSeconds?: null | int64 @go(ExpirationSeconds,*int64) @protobuf(2,varint,opt)
+        path:               string       @go(Path) @protobuf(3,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ClusterTrustBundleProjection
+    let CLUSTERTRUSTBUNDLEPROJECTION = {
+      #x: {
+        name?:          null | string           @go(Name,*string) @protobuf(1,bytes,rep)
+        signerName?:    null | string           @go(SignerName,*string) @protobuf(2,bytes,rep)
+        labelSelector?: null | LABELSELECTOR.#x @go(LabelSelector,*metav1.LabelSelector) @protobuf(3,bytes,rep)
+        optional?:      null | bool             @go(Optional,*bool) @protobuf(5,varint,opt)
+        path:           string                  @go(Path) @protobuf(4,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#PortworxVolumeSource
+    let PORTWORXVOLUMESOURCE = {
+      #x: {
+        volumeID:  string @go(VolumeID) @protobuf(1,bytes,opt)
+        fsType?:   string @go(FSType) @protobuf(2,bytes,opt)
+        readOnly?: bool   @go(ReadOnly) @protobuf(3,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ScaleIOVolumeSource
+    let SCALEIOVOLUMESOURCE = {
+      #x: {
+        gateway:           string                         @go(Gateway) @protobuf(1,bytes,opt)
+        system:            string                         @go(System) @protobuf(2,bytes,opt)
+        secretRef?:        null | LOCALOBJECTREFERENCE.#x @go(SecretRef,*LocalObjectReference) @protobuf(3,bytes,opt)
+        sslEnabled?:       bool                           @go(SSLEnabled) @protobuf(4,varint,opt)
+        protectionDomain?: string                         @go(ProtectionDomain) @protobuf(5,bytes,opt)
+        storagePool?:      string                         @go(StoragePool) @protobuf(6,bytes,opt)
+        storageMode?:      string                         @go(StorageMode) @protobuf(7,bytes,opt)
+        volumeName?:       string                         @go(VolumeName) @protobuf(8,bytes,opt)
+        fsType?:           string                         @go(FSType) @protobuf(9,bytes,opt)
+        readOnly?:         bool                           @go(ReadOnly) @protobuf(10,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#StorageOSVolumeSource
+    let STORAGEOSVOLUMESOURCE = {
+      #x: {
+        volumeName?:      string                         @go(VolumeName) @protobuf(1,bytes,opt)
+        volumeNamespace?: string                         @go(VolumeNamespace) @protobuf(2,bytes,opt)
+        fsType?:          string                         @go(FSType) @protobuf(3,bytes,opt)
+        readOnly?:        bool                           @go(ReadOnly) @protobuf(4,varint,opt)
+        secretRef?:       null | LOCALOBJECTREFERENCE.#x @go(SecretRef,*LocalObjectReference) @protobuf(5,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#CSIVolumeSource
+    let CSIVOLUMESOURCE = {
+      #x: {
+        driver:    string        @go(Driver) @protobuf(1,bytes,opt)
+        readOnly?: null | bool   @go(ReadOnly,*bool) @protobuf(2,varint,opt)
+        fsType?:   null | string @go(FSType,*string) @protobuf(3,bytes,opt)
+        volumeAttributes?: {
+          [string]: string
+        } @go(VolumeAttributes,map[string]string) @protobuf(4,bytes,rep)
+        nodePublishSecretRef?: null | LOCALOBJECTREFERENCE.#x @go(NodePublishSecretRef,*LocalObjectReference) @protobuf(5,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#EphemeralVolumeSource
+    let EPHEMERALVOLUMESOURCE = {
+      #x: {
+        volumeClaimTemplate?: null | PERSISTENTVOLUMECLAIMTEMPLATE.#x @go(VolumeClaimTemplate,*PersistentVolumeClaimTemplate) @protobuf(1,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#PersistentVolumeClaimTemplate
+    let PERSISTENTVOLUMECLAIMTEMPLATE = {
+      #x: {
+        metadata?: OBJECTMETA.#x                @go(ObjectMeta) @protobuf(1,bytes,opt)
+        spec:      PERSISTENTVOLUMECLAIMSPEC.#x @go(Spec) @protobuf(2,bytes)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#PersistentVolumeClaimSpec
+    let PERSISTENTVOLUMECLAIMSPEC = {
+      #x: {
+        accessModes?: [...PERSISTENTVOLUMEACCESSMODE.#x] @go(AccessModes,[]PersistentVolumeAccessMode) @protobuf(1,bytes,rep,casttype=PersistentVolumeAccessMode)
+        selector?:                  null | LABELSELECTOR.#x             @go(Selector,*metav1.LabelSelector) @protobuf(4,bytes,opt)
+        resources?:                 VOLUMERESOURCEREQUIREMENTS.#x       @go(Resources) @protobuf(2,bytes,opt)
+        volumeName?:                string                              @go(VolumeName) @protobuf(3,bytes,opt)
+        storageClassName?:          null | string                       @go(StorageClassName,*string) @protobuf(5,bytes,opt)
+        volumeMode?:                null | PERSISTENTVOLUMEMODE.#x      @go(VolumeMode,*PersistentVolumeMode) @protobuf(6,bytes,opt,casttype=PersistentVolumeMode)
+        dataSource?:                null | TYPEDLOCALOBJECTREFERENCE.#x @go(DataSource,*TypedLocalObjectReference) @protobuf(7,bytes,opt)
+        dataSourceRef?:             null | TYPEDOBJECTREFERENCE.#x      @go(DataSourceRef,*TypedObjectReference) @protobuf(8,bytes,opt)
+        volumeAttributesClassName?: null | string                       @go(VolumeAttributesClassName,*string) @protobuf(9,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#PersistentVolumeAccessMode
+    let PERSISTENTVOLUMEACCESSMODE = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#VolumeResourceRequirements
+    let VOLUMERESOURCEREQUIREMENTS = {
+      #x: {
+        limits?:   RESOURCELIST.#x @go(Limits) @protobuf(1,bytes,rep,casttype=ResourceList,castkey=ResourceName)
+        requests?: RESOURCELIST.#x @go(Requests) @protobuf(2,bytes,rep,casttype=ResourceList,castkey=ResourceName)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ResourceList
+    let RESOURCELIST = {
+      #x: {
+        [string]: QUANTITY.#x
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#PersistentVolumeMode
+    let PERSISTENTVOLUMEMODE = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ImageVolumeSource
+    let IMAGEVOLUMESOURCE = {
+      #x: {
+        reference?:  string        @go(Reference) @protobuf(1,bytes,opt)
+        pullPolicy?: PULLPOLICY.#x @go(PullPolicy) @protobuf(2,bytes,opt,casttype=PullPolicy)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#PullPolicy
+    let PULLPOLICY = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#Container
+    let CONTAINER = {
+      #x: {
+        name:   string @go(Name) @protobuf(1,bytes,opt)
+        image?: string @go(Image) @protobuf(2,bytes,opt)
+        command?: [...string] @go(Command,[]string) @protobuf(3,bytes,rep)
+        args?: [...string] @go(Args,[]string) @protobuf(4,bytes,rep)
+        workingDir?: string @go(WorkingDir) @protobuf(5,bytes,opt)
+        ports?: [...CONTAINERPORT.#x] @go(Ports,[]ContainerPort) @protobuf(6,bytes,rep)
+        envFrom?: [...ENVFROMSOURCE.#x] @go(EnvFrom,[]EnvFromSource) @protobuf(19,bytes,rep)
+        env?: [...ENVVAR.#x] @go(Env,[]EnvVar) @protobuf(7,bytes,rep)
+        resources?: RESOURCEREQUIREMENTS.#x @go(Resources) @protobuf(8,bytes,opt)
+        resizePolicy?: [...CONTAINERRESIZEPOLICY.#x] @go(ResizePolicy,[]ContainerResizePolicy) @protobuf(23,bytes,rep)
+        restartPolicy?: null | CONTAINERRESTARTPOLICY.#x @go(RestartPolicy,*ContainerRestartPolicy) @protobuf(24,bytes,opt,casttype=ContainerRestartPolicy)
+        volumeMounts?: [...VOLUMEMOUNT.#x] @go(VolumeMounts,[]VolumeMount) @protobuf(9,bytes,rep)
+        volumeDevices?: [...VOLUMEDEVICE.#x] @go(VolumeDevices,[]VolumeDevice) @protobuf(21,bytes,rep)
+        livenessProbe?:            null | PROBE.#x             @go(LivenessProbe,*Probe) @protobuf(10,bytes,opt)
+        readinessProbe?:           null | PROBE.#x             @go(ReadinessProbe,*Probe) @protobuf(11,bytes,opt)
+        startupProbe?:             null | PROBE.#x             @go(StartupProbe,*Probe) @protobuf(22,bytes,opt)
+        lifecycle?:                null | LIFECYCLE.#x         @go(Lifecycle,*Lifecycle) @protobuf(12,bytes,opt)
+        terminationMessagePath?:   string                      @go(TerminationMessagePath) @protobuf(13,bytes,opt)
+        terminationMessagePolicy?: TERMINATIONMESSAGEPOLICY.#x @go(TerminationMessagePolicy) @protobuf(20,bytes,opt,casttype=TerminationMessagePolicy)
+        imagePullPolicy?:          PULLPOLICY.#x               @go(ImagePullPolicy) @protobuf(14,bytes,opt,casttype=PullPolicy)
+        securityContext?:          null | SECURITYCONTEXT.#x   @go(SecurityContext,*SecurityContext) @protobuf(15,bytes,opt)
+        stdin?:                    bool                        @go(Stdin) @protobuf(16,varint,opt)
+        stdinOnce?:                bool                        @go(StdinOnce) @protobuf(17,varint,opt)
+        tty?:                      bool                        @go(TTY) @protobuf(18,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ContainerPort
+    let CONTAINERPORT = {
+      #x: {
+        name?:         string      @go(Name) @protobuf(1,bytes,opt)
+        hostPort?:     int32       @go(HostPort) @protobuf(2,varint,opt)
+        containerPort: int32       @go(ContainerPort) @protobuf(3,varint,opt)
+        protocol?:     PROTOCOL.#x @go(Protocol) @protobuf(4,bytes,opt,casttype=Protocol)
+        hostIP?:       string      @go(HostIP) @protobuf(5,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#Protocol
+    let PROTOCOL = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#EnvFromSource
+    let ENVFROMSOURCE = {
+      #x: {
+        prefix?:       string                       @go(Prefix) @protobuf(1,bytes,opt)
+        configMapRef?: null | CONFIGMAPENVSOURCE.#x @go(ConfigMapRef,*ConfigMapEnvSource) @protobuf(2,bytes,opt)
+        secretRef?:    null | SECRETENVSOURCE.#x    @go(SecretRef,*SecretEnvSource) @protobuf(3,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ConfigMapEnvSource
+    let CONFIGMAPENVSOURCE = {
+      #x: {
+        LOCALOBJECTREFERENCE.#x
+        optional?: null | bool @go(Optional,*bool) @protobuf(2,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#SecretEnvSource
+    let SECRETENVSOURCE = {
+      #x: {
+        LOCALOBJECTREFERENCE.#x
+        optional?: null | bool @go(Optional,*bool) @protobuf(2,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#EnvVar
+    let ENVVAR = {
+      #x: {
+        name:       string                 @go(Name) @protobuf(1,bytes,opt)
+        value?:     string                 @go(Value) @protobuf(2,bytes,opt)
+        valueFrom?: null | ENVVARSOURCE.#x @go(ValueFrom,*EnvVarSource) @protobuf(3,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#EnvVarSource
+    let ENVVARSOURCE = {
+      #x: {
+        fieldRef?:         null | OBJECTFIELDSELECTOR.#x   @go(FieldRef,*ObjectFieldSelector) @protobuf(1,bytes,opt)
+        resourceFieldRef?: null | RESOURCEFIELDSELECTOR.#x @go(ResourceFieldRef,*ResourceFieldSelector) @protobuf(2,bytes,opt)
+        configMapKeyRef?:  null | CONFIGMAPKEYSELECTOR.#x  @go(ConfigMapKeyRef,*ConfigMapKeySelector) @protobuf(3,bytes,opt)
+        secretKeyRef?:     null | SECRETKEYSELECTOR.#x     @go(SecretKeyRef,*SecretKeySelector) @protobuf(4,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ConfigMapKeySelector
+    let CONFIGMAPKEYSELECTOR = {
+      #x: {
+        LOCALOBJECTREFERENCE.#x
+        key:       string      @go(Key) @protobuf(2,bytes,opt)
+        optional?: null | bool @go(Optional,*bool) @protobuf(3,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#SecretKeySelector
+    let SECRETKEYSELECTOR = {
+      #x: {
+        LOCALOBJECTREFERENCE.#x
+        key:       string      @go(Key) @protobuf(2,bytes,opt)
+        optional?: null | bool @go(Optional,*bool) @protobuf(3,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ResourceRequirements
+    let RESOURCEREQUIREMENTS = {
+      #x: {
+        limits?:   RESOURCELIST.#x @go(Limits) @protobuf(1,bytes,rep,casttype=ResourceList,castkey=ResourceName)
+        requests?: RESOURCELIST.#x @go(Requests) @protobuf(2,bytes,rep,casttype=ResourceList,castkey=ResourceName)
+        claims?: [...RESOURCECLAIM.#x] @go(Claims,[]ResourceClaim) @protobuf(3,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ResourceClaim
+    let RESOURCECLAIM = {
+      #x: {
+        name:     string @go(Name) @protobuf(1,bytes,opt)
+        request?: string @go(Request) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ContainerResizePolicy
+    let CONTAINERRESIZEPOLICY = {
+      #x: {
+        resourceName:  RESOURCENAME.#x                @go(ResourceName) @protobuf(1,bytes,opt,casttype=ResourceName)
+        restartPolicy: RESOURCERESIZERESTARTPOLICY.#x @go(RestartPolicy) @protobuf(2,bytes,opt,casttype=ResourceResizeRestartPolicy)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ResourceName
+    let RESOURCENAME = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ResourceResizeRestartPolicy
+    let RESOURCERESIZERESTARTPOLICY = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ContainerRestartPolicy
+    let CONTAINERRESTARTPOLICY = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#VolumeMount
+    let VOLUMEMOUNT = {
+      #x: {
+        name:               string                          @go(Name) @protobuf(1,bytes,opt)
+        readOnly?:          bool                            @go(ReadOnly) @protobuf(2,varint,opt)
+        recursiveReadOnly?: null | RECURSIVEREADONLYMODE.#x @go(RecursiveReadOnly,*RecursiveReadOnlyMode) @protobuf(7,bytes,opt,casttype=RecursiveReadOnlyMode)
+        mountPath:          string                          @go(MountPath) @protobuf(3,bytes,opt)
+        subPath?:           string                          @go(SubPath) @protobuf(4,bytes,opt)
+        mountPropagation?:  null | MOUNTPROPAGATIONMODE.#x  @go(MountPropagation,*MountPropagationMode) @protobuf(5,bytes,opt,casttype=MountPropagationMode)
+        subPathExpr?:       string                          @go(SubPathExpr) @protobuf(6,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#RecursiveReadOnlyMode
+    let RECURSIVEREADONLYMODE = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#MountPropagationMode
+    let MOUNTPROPAGATIONMODE = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#VolumeDevice
+    let VOLUMEDEVICE = {
+      #x: {
+        name:       string @go(Name) @protobuf(1,bytes,opt)
+        devicePath: string @go(DevicePath) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#Probe
+    let PROBE = {
+      #x: {
+        PROBEHANDLER.#x
+        initialDelaySeconds?:           int32        @go(InitialDelaySeconds) @protobuf(2,varint,opt)
+        timeoutSeconds?:                int32        @go(TimeoutSeconds) @protobuf(3,varint,opt)
+        periodSeconds?:                 int32        @go(PeriodSeconds) @protobuf(4,varint,opt)
+        successThreshold?:              int32        @go(SuccessThreshold) @protobuf(5,varint,opt)
+        failureThreshold?:              int32        @go(FailureThreshold) @protobuf(6,varint,opt)
+        terminationGracePeriodSeconds?: null | int64 @go(TerminationGracePeriodSeconds,*int64) @protobuf(7,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ProbeHandler
+    let PROBEHANDLER = {
+      #x: {
+        exec?:      null | EXECACTION.#x      @go(Exec,*ExecAction) @protobuf(1,bytes,opt)
+        httpGet?:   null | HTTPGETACTION.#x   @go(HTTPGet,*HTTPGetAction) @protobuf(2,bytes,opt)
+        tcpSocket?: null | TCPSOCKETACTION.#x @go(TCPSocket,*TCPSocketAction) @protobuf(3,bytes,opt)
+        grpc?:      null | GRPCACTION.#x      @go(GRPC,*GRPCAction) @protobuf(4,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ExecAction
+    let EXECACTION = {
+      #x: {
+        command?: [...string] @go(Command,[]string) @protobuf(1,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#HTTPGetAction
+    let HTTPGETACTION = {
+      #x: {
+        path?:   string         @go(Path) @protobuf(1,bytes,opt)
+        port:    INTORSTRING.#x @go(Port) @protobuf(2,bytes,opt)
+        host?:   string         @go(Host) @protobuf(3,bytes,opt)
+        scheme?: URISCHEME.#x   @go(Scheme) @protobuf(4,bytes,opt,casttype=URIScheme)
+        httpHeaders?: [...HTTPHEADER.#x] @go(HTTPHeaders,[]HTTPHeader) @protobuf(5,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/util/intstr".#IntOrString
+    let INTORSTRING = {
+      #x: _
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#URIScheme
+    let URISCHEME = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#HTTPHeader
+    let HTTPHEADER = {
+      #x: {
+        name:  string @go(Name) @protobuf(1,bytes,opt)
+        value: string @go(Value) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#TCPSocketAction
+    let TCPSOCKETACTION = {
+      #x: {
+        port:  INTORSTRING.#x @go(Port) @protobuf(1,bytes,opt)
+        host?: string         @go(Host) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#GRPCAction
+    let GRPCACTION = {
+      #x: {
+        port:     int32         @go(Port) @protobuf(1,bytes,opt)
+        service?: null | string @go(Service,*string) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#Lifecycle
+    let LIFECYCLE = {
+      #x: {
+        postStart?: null | LIFECYCLEHANDLER.#x @go(PostStart,*LifecycleHandler) @protobuf(1,bytes,opt)
+        preStop?:   null | LIFECYCLEHANDLER.#x @go(PreStop,*LifecycleHandler) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#LifecycleHandler
+    let LIFECYCLEHANDLER = {
+      #x: {
+        exec?:      null | EXECACTION.#x      @go(Exec,*ExecAction) @protobuf(1,bytes,opt)
+        httpGet?:   null | HTTPGETACTION.#x   @go(HTTPGet,*HTTPGetAction) @protobuf(2,bytes,opt)
+        tcpSocket?: null | TCPSOCKETACTION.#x @go(TCPSocket,*TCPSocketAction) @protobuf(3,bytes,opt)
+        sleep?:     null | SLEEPACTION.#x     @go(Sleep,*SleepAction) @protobuf(4,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#SleepAction
+    let SLEEPACTION = {
+      #x: {
+        seconds: int64 @go(Seconds) @protobuf(1,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#TerminationMessagePolicy
+    let TERMINATIONMESSAGEPOLICY = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#SecurityContext
+    let SECURITYCONTEXT = {
+      #x: {
+        capabilities?:             null | CAPABILITIES.#x                  @go(Capabilities,*Capabilities) @protobuf(1,bytes,opt)
+        privileged?:               null | bool                             @go(Privileged,*bool) @protobuf(2,varint,opt)
+        seLinuxOptions?:           null | SELINUXOPTIONS.#x                @go(SELinuxOptions,*SELinuxOptions) @protobuf(3,bytes,opt)
+        windowsOptions?:           null | WINDOWSSECURITYCONTEXTOPTIONS.#x @go(WindowsOptions,*WindowsSecurityContextOptions) @protobuf(10,bytes,opt)
+        runAsUser?:                null | int64                            @go(RunAsUser,*int64) @protobuf(4,varint,opt)
+        runAsGroup?:               null | int64                            @go(RunAsGroup,*int64) @protobuf(8,varint,opt)
+        runAsNonRoot?:             null | bool                             @go(RunAsNonRoot,*bool) @protobuf(5,varint,opt)
+        readOnlyRootFilesystem?:   null | bool                             @go(ReadOnlyRootFilesystem,*bool) @protobuf(6,varint,opt)
+        allowPrivilegeEscalation?: null | bool                             @go(AllowPrivilegeEscalation,*bool) @protobuf(7,varint,opt)
+        procMount?:                null | PROCMOUNTTYPE.#x                 @go(ProcMount,*ProcMountType) @protobuf(9,bytes,opt)
+        seccompProfile?:           null | SECCOMPPROFILE.#x                @go(SeccompProfile,*SeccompProfile) @protobuf(11,bytes,opt)
+        appArmorProfile?:          null | APPARMORPROFILE.#x               @go(AppArmorProfile,*AppArmorProfile) @protobuf(12,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#Capabilities
+    let CAPABILITIES = {
+      #x: {
+        add?: [...CAPABILITY.#x] @go(Add,[]Capability) @protobuf(1,bytes,rep,casttype=Capability)
+        drop?: [...CAPABILITY.#x] @go(Drop,[]Capability) @protobuf(2,bytes,rep,casttype=Capability)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#Capability
+    let CAPABILITY = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#SELinuxOptions
+    let SELINUXOPTIONS = {
+      #x: {
+        user?:  string @go(User) @protobuf(1,bytes,opt)
+        role?:  string @go(Role) @protobuf(2,bytes,opt)
+        type?:  string @go(Type) @protobuf(3,bytes,opt)
+        level?: string @go(Level) @protobuf(4,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#WindowsSecurityContextOptions
+    let WINDOWSSECURITYCONTEXTOPTIONS = {
+      #x: {
+        gmsaCredentialSpecName?: null | string @go(GMSACredentialSpecName,*string) @protobuf(1,bytes,opt)
+        gmsaCredentialSpec?:     null | string @go(GMSACredentialSpec,*string) @protobuf(2,bytes,opt)
+        runAsUserName?:          null | string @go(RunAsUserName,*string) @protobuf(3,bytes,opt)
+        hostProcess?:            null | bool   @go(HostProcess,*bool) @protobuf(4,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ProcMountType
+    let PROCMOUNTTYPE = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#SeccompProfile
+    let SECCOMPPROFILE = {
+      #x: {
+        type:              SECCOMPPROFILETYPE.#x @go(Type) @protobuf(1,bytes,opt,casttype=SeccompProfileType)
+        localhostProfile?: null | string         @go(LocalhostProfile,*string) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#SeccompProfileType
+    let SECCOMPPROFILETYPE = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#AppArmorProfile
+    let APPARMORPROFILE = {
+      #x: {
+        type:              APPARMORPROFILETYPE.#x @go(Type) @protobuf(1,bytes,opt,casttype=AppArmorProfileType)
+        localhostProfile?: null | string          @go(LocalhostProfile,*string) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#AppArmorProfileType
+    let APPARMORPROFILETYPE = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#EphemeralContainer
+    let EPHEMERALCONTAINER = {
+      #x: {
+        EPHEMERALCONTAINERCOMMON.#x
+        targetContainerName?: string @go(TargetContainerName) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#EphemeralContainerCommon
+    let EPHEMERALCONTAINERCOMMON = {
+      #x: {
+        name:   string @go(Name) @protobuf(1,bytes,opt)
+        image?: string @go(Image) @protobuf(2,bytes,opt)
+        command?: [...string] @go(Command,[]string) @protobuf(3,bytes,rep)
+        args?: [...string] @go(Args,[]string) @protobuf(4,bytes,rep)
+        workingDir?: string @go(WorkingDir) @protobuf(5,bytes,opt)
+        ports?: [...CONTAINERPORT.#x] @go(Ports,[]ContainerPort) @protobuf(6,bytes,rep)
+        envFrom?: [...ENVFROMSOURCE.#x] @go(EnvFrom,[]EnvFromSource) @protobuf(19,bytes,rep)
+        env?: [...ENVVAR.#x] @go(Env,[]EnvVar) @protobuf(7,bytes,rep)
+        resources?: RESOURCEREQUIREMENTS.#x @go(Resources) @protobuf(8,bytes,opt)
+        resizePolicy?: [...CONTAINERRESIZEPOLICY.#x] @go(ResizePolicy,[]ContainerResizePolicy) @protobuf(23,bytes,rep)
+        restartPolicy?: null | CONTAINERRESTARTPOLICY.#x @go(RestartPolicy,*ContainerRestartPolicy) @protobuf(24,bytes,opt,casttype=ContainerRestartPolicy)
+        volumeMounts?: [...VOLUMEMOUNT.#x] @go(VolumeMounts,[]VolumeMount) @protobuf(9,bytes,rep)
+        volumeDevices?: [...VOLUMEDEVICE.#x] @go(VolumeDevices,[]VolumeDevice) @protobuf(21,bytes,rep)
+        livenessProbe?:            null | PROBE.#x             @go(LivenessProbe,*Probe) @protobuf(10,bytes,opt)
+        readinessProbe?:           null | PROBE.#x             @go(ReadinessProbe,*Probe) @protobuf(11,bytes,opt)
+        startupProbe?:             null | PROBE.#x             @go(StartupProbe,*Probe) @protobuf(22,bytes,opt)
+        lifecycle?:                null | LIFECYCLE.#x         @go(Lifecycle,*Lifecycle) @protobuf(12,bytes,opt)
+        terminationMessagePath?:   string                      @go(TerminationMessagePath) @protobuf(13,bytes,opt)
+        terminationMessagePolicy?: TERMINATIONMESSAGEPOLICY.#x @go(TerminationMessagePolicy) @protobuf(20,bytes,opt,casttype=TerminationMessagePolicy)
+        imagePullPolicy?:          PULLPOLICY.#x               @go(ImagePullPolicy) @protobuf(14,bytes,opt,casttype=PullPolicy)
+        securityContext?:          null | SECURITYCONTEXT.#x   @go(SecurityContext,*SecurityContext) @protobuf(15,bytes,opt)
+        stdin?:                    bool                        @go(Stdin) @protobuf(16,varint,opt)
+        stdinOnce?:                bool                        @go(StdinOnce) @protobuf(17,varint,opt)
+        tty?:                      bool                        @go(TTY) @protobuf(18,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#RestartPolicy
+    let RESTARTPOLICY = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#DNSPolicy
+    let DNSPOLICY = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#PodSecurityContext
+    let PODSECURITYCONTEXT = {
+      #x: {
+        seLinuxOptions?: null | SELINUXOPTIONS.#x                @go(SELinuxOptions,*SELinuxOptions) @protobuf(1,bytes,opt)
+        windowsOptions?: null | WINDOWSSECURITYCONTEXTOPTIONS.#x @go(WindowsOptions,*WindowsSecurityContextOptions) @protobuf(8,bytes,opt)
+        runAsUser?:      null | int64                            @go(RunAsUser,*int64) @protobuf(2,varint,opt)
+        runAsGroup?:     null | int64                            @go(RunAsGroup,*int64) @protobuf(6,varint,opt)
+        runAsNonRoot?:   null | bool                             @go(RunAsNonRoot,*bool) @protobuf(3,varint,opt)
+        supplementalGroups?: [...int64] @go(SupplementalGroups,[]int64) @protobuf(4,varint,rep)
+        supplementalGroupsPolicy?: null | SUPPLEMENTALGROUPSPOLICY.#x @go(SupplementalGroupsPolicy,*SupplementalGroupsPolicy) @protobuf(12,bytes,opt)
+        fsGroup?:                  null | int64                       @go(FSGroup,*int64) @protobuf(5,varint,opt)
+        sysctls?: [...SYSCTL.#x] @go(Sysctls,[]Sysctl) @protobuf(7,bytes,rep)
+        fsGroupChangePolicy?: null | PODFSGROUPCHANGEPOLICY.#x @go(FSGroupChangePolicy,*PodFSGroupChangePolicy) @protobuf(9,bytes,opt)
+        seccompProfile?:      null | SECCOMPPROFILE.#x         @go(SeccompProfile,*SeccompProfile) @protobuf(10,bytes,opt)
+        appArmorProfile?:     null | APPARMORPROFILE.#x        @go(AppArmorProfile,*AppArmorProfile) @protobuf(11,bytes,opt)
+        seLinuxChangePolicy?: null | PODSELINUXCHANGEPOLICY.#x @go(SELinuxChangePolicy,*PodSELinuxChangePolicy) @protobuf(13,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#SupplementalGroupsPolicy
+    let SUPPLEMENTALGROUPSPOLICY = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#Sysctl
+    let SYSCTL = {
+      #x: {
+        name:  string @go(Name) @protobuf(1,bytes,opt)
+        value: string @go(Value) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#PodFSGroupChangePolicy
+    let PODFSGROUPCHANGEPOLICY = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#PodSELinuxChangePolicy
+    let PODSELINUXCHANGEPOLICY = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#Affinity
+    let AFFINITY = {
+      #x: {
+        nodeAffinity?:    null | NODEAFFINITY.#x    @go(NodeAffinity,*NodeAffinity) @protobuf(1,bytes,opt)
+        podAffinity?:     null | PODAFFINITY.#x     @go(PodAffinity,*PodAffinity) @protobuf(2,bytes,opt)
+        podAntiAffinity?: null | PODANTIAFFINITY.#x @go(PodAntiAffinity,*PodAntiAffinity) @protobuf(3,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#NodeAffinity
+    let NODEAFFINITY = {
+      #x: {
+        requiredDuringSchedulingIgnoredDuringExecution?: null | NODESELECTOR.#x @go(RequiredDuringSchedulingIgnoredDuringExecution,*NodeSelector) @protobuf(1,bytes,opt)
+        preferredDuringSchedulingIgnoredDuringExecution?: [...PREFERREDSCHEDULINGTERM.#x] @go(PreferredDuringSchedulingIgnoredDuringExecution,[]PreferredSchedulingTerm) @protobuf(2,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#NodeSelector
+    let NODESELECTOR = {
+      #x: {
+        nodeSelectorTerms: [...NODESELECTORTERM.#x] @go(NodeSelectorTerms,[]NodeSelectorTerm) @protobuf(1,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#NodeSelectorTerm
+    let NODESELECTORTERM = {
+      #x: {
+        matchExpressions?: [...NODESELECTORREQUIREMENT.#x] @go(MatchExpressions,[]NodeSelectorRequirement) @protobuf(1,bytes,rep)
+        matchFields?: [...NODESELECTORREQUIREMENT.#x] @go(MatchFields,[]NodeSelectorRequirement) @protobuf(2,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#NodeSelectorRequirement
+    let NODESELECTORREQUIREMENT = {
+      #x: {
+        key:      string                  @go(Key) @protobuf(1,bytes,opt)
+        operator: NODESELECTOROPERATOR.#x @go(Operator) @protobuf(2,bytes,opt,casttype=NodeSelectorOperator)
+        values?: [...string] @go(Values,[]string) @protobuf(3,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#NodeSelectorOperator
+    let NODESELECTOROPERATOR = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#PreferredSchedulingTerm
+    let PREFERREDSCHEDULINGTERM = {
+      #x: {
+        weight:     int32               @go(Weight) @protobuf(1,varint,opt)
+        preference: NODESELECTORTERM.#x @go(Preference) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#PodAffinity
+    let PODAFFINITY = {
+      #x: {
+        requiredDuringSchedulingIgnoredDuringExecution?: [...PODAFFINITYTERM.#x] @go(RequiredDuringSchedulingIgnoredDuringExecution,[]PodAffinityTerm) @protobuf(1,bytes,rep)
+        preferredDuringSchedulingIgnoredDuringExecution?: [...WEIGHTEDPODAFFINITYTERM.#x] @go(PreferredDuringSchedulingIgnoredDuringExecution,[]WeightedPodAffinityTerm) @protobuf(2,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#PodAffinityTerm
+    let PODAFFINITYTERM = {
+      #x: {
+        labelSelector?: null | LABELSELECTOR.#x @go(LabelSelector,*metav1.LabelSelector) @protobuf(1,bytes,opt)
+        namespaces?: [...string] @go(Namespaces,[]string) @protobuf(2,bytes,rep)
+        topologyKey:        string                  @go(TopologyKey) @protobuf(3,bytes,opt)
+        namespaceSelector?: null | LABELSELECTOR.#x @go(NamespaceSelector,*metav1.LabelSelector) @protobuf(4,bytes,opt)
+        matchLabelKeys?: [...string] @go(MatchLabelKeys,[]string) @protobuf(5,bytes,opt)
+        mismatchLabelKeys?: [...string] @go(MismatchLabelKeys,[]string) @protobuf(6,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#WeightedPodAffinityTerm
+    let WEIGHTEDPODAFFINITYTERM = {
+      #x: {
+        weight:          int32              @go(Weight) @protobuf(1,varint,opt)
+        podAffinityTerm: PODAFFINITYTERM.#x @go(PodAffinityTerm) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#PodAntiAffinity
+    let PODANTIAFFINITY = {
+      #x: {
+        requiredDuringSchedulingIgnoredDuringExecution?: [...PODAFFINITYTERM.#x] @go(RequiredDuringSchedulingIgnoredDuringExecution,[]PodAffinityTerm) @protobuf(1,bytes,rep)
+        preferredDuringSchedulingIgnoredDuringExecution?: [...WEIGHTEDPODAFFINITYTERM.#x] @go(PreferredDuringSchedulingIgnoredDuringExecution,[]WeightedPodAffinityTerm) @protobuf(2,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#Toleration
+    let TOLERATION = {
+      #x: {
+        key?:               string                @go(Key) @protobuf(1,bytes,opt)
+        operator?:          TOLERATIONOPERATOR.#x @go(Operator) @protobuf(2,bytes,opt,casttype=TolerationOperator)
+        value?:             string                @go(Value) @protobuf(3,bytes,opt)
+        effect?:            TAINTEFFECT.#x        @go(Effect) @protobuf(4,bytes,opt,casttype=TaintEffect)
+        tolerationSeconds?: null | int64          @go(TolerationSeconds,*int64) @protobuf(5,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#TolerationOperator
+    let TOLERATIONOPERATOR = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#TaintEffect
+    let TAINTEFFECT = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#HostAlias
+    let HOSTALIAS = {
+      #x: {
+        ip: string @go(IP) @protobuf(1,bytes,opt)
+        hostnames?: [...string] @go(Hostnames,[]string) @protobuf(2,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#PodDNSConfig
+    let PODDNSCONFIG = {
+      #x: {
+        nameservers?: [...string] @go(Nameservers,[]string) @protobuf(1,bytes,rep)
+        searches?: [...string] @go(Searches,[]string) @protobuf(2,bytes,rep)
+        options?: [...PODDNSCONFIGOPTION.#x] @go(Options,[]PodDNSConfigOption) @protobuf(3,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#PodDNSConfigOption
+    let PODDNSCONFIGOPTION = {
+      #x: {
+        name?:  string        @go(Name) @protobuf(1,bytes,opt)
+        value?: null | string @go(Value,*string) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#PodReadinessGate
+    let PODREADINESSGATE = {
+      #x: {
+        conditionType: PODCONDITIONTYPE.#x @go(ConditionType) @protobuf(1,bytes,opt,casttype=PodConditionType)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#PodConditionType
+    let PODCONDITIONTYPE = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#PreemptionPolicy
+    let PREEMPTIONPOLICY = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#TopologySpreadConstraint
+    let TOPOLOGYSPREADCONSTRAINT = {
+      #x: {
+        maxSkew:             int32                            @go(MaxSkew) @protobuf(1,varint,opt)
+        topologyKey:         string                           @go(TopologyKey) @protobuf(2,bytes,opt)
+        whenUnsatisfiable:   UNSATISFIABLECONSTRAINTACTION.#x @go(WhenUnsatisfiable) @protobuf(3,bytes,opt,casttype=UnsatisfiableConstraintAction)
+        labelSelector?:      null | LABELSELECTOR.#x          @go(LabelSelector,*metav1.LabelSelector) @protobuf(4,bytes,opt)
+        minDomains?:         null | int32                     @go(MinDomains,*int32) @protobuf(5,varint,opt)
+        nodeAffinityPolicy?: null | NODEINCLUSIONPOLICY.#x    @go(NodeAffinityPolicy,*NodeInclusionPolicy) @protobuf(6,bytes,opt)
+        nodeTaintsPolicy?:   null | NODEINCLUSIONPOLICY.#x    @go(NodeTaintsPolicy,*NodeInclusionPolicy) @protobuf(7,bytes,opt)
+        matchLabelKeys?: [...string] @go(MatchLabelKeys,[]string) @protobuf(8,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#UnsatisfiableConstraintAction
+    let UNSATISFIABLECONSTRAINTACTION = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#NodeInclusionPolicy
+    let NODEINCLUSIONPOLICY = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#PodOS
+    let PODOS = {
+      #x: {
+        name: OSNAME.#x @go(Name) @protobuf(1,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#OSName
+    let OSNAME = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#PodSchedulingGate
+    let PODSCHEDULINGGATE = {
+      #x: {
+        name: string @go(Name) @protobuf(1,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#PodResourceClaim
+    let PODRESOURCECLAIM = {
+      #x: {
+        name:                       string        @go(Name) @protobuf(1,bytes)
+        resourceClaimName?:         null | string @go(ResourceClaimName,*string) @protobuf(3,bytes,opt)
+        resourceClaimTemplateName?: null | string @go(ResourceClaimTemplateName,*string) @protobuf(4,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/apps/v1".#DeploymentStrategy
+    let DEPLOYMENTSTRATEGY = {
+      #x: {
+        type?:          DEPLOYMENTSTRATEGYTYPE.#x         @go(Type) @protobuf(1,bytes,opt,casttype=DeploymentStrategyType)
+        rollingUpdate?: null | ROLLINGUPDATEDEPLOYMENT.#x @go(RollingUpdate,*RollingUpdateDeployment) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/apps/v1".#DeploymentStrategyType
+    let DEPLOYMENTSTRATEGYTYPE = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/apps/v1".#RollingUpdateDeployment
+    let ROLLINGUPDATEDEPLOYMENT = {
+      #x: {
+        maxUnavailable?: null | INTORSTRING.#x @go(MaxUnavailable,*intstr.IntOrString) @protobuf(1,bytes,opt)
+        maxSurge?:       null | INTORSTRING.#x @go(MaxSurge,*intstr.IntOrString) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/apps/v1".#DeploymentStatus
+    let DEPLOYMENTSTATUS = {
+      #x: {
+        observedGeneration?:  int64 @go(ObservedGeneration) @protobuf(1,varint,opt)
+        replicas?:            int32 @go(Replicas) @protobuf(2,varint,opt)
+        updatedReplicas?:     int32 @go(UpdatedReplicas) @protobuf(3,varint,opt)
+        readyReplicas?:       int32 @go(ReadyReplicas) @protobuf(7,varint,opt)
+        availableReplicas?:   int32 @go(AvailableReplicas) @protobuf(4,varint,opt)
+        unavailableReplicas?: int32 @go(UnavailableReplicas) @protobuf(5,varint,opt)
+        conditions?: [...DEPLOYMENTCONDITION.#x] @go(Conditions,[]DeploymentCondition) @protobuf(6,bytes,rep)
+        collisionCount?: null | int32 @go(CollisionCount,*int32) @protobuf(8,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/apps/v1".#DeploymentCondition
+    let DEPLOYMENTCONDITION = {
+      #x: {
+        type:                DEPLOYMENTCONDITIONTYPE.#x @go(Type) @protobuf(1,bytes,opt,casttype=DeploymentConditionType)
+        status:              CONDITIONSTATUS_1.#x       @go(Status) @protobuf(2,bytes,opt,casttype=k8s.io/api/core/v1.ConditionStatus)
+        lastUpdateTime?:     TIME.#x                    @go(LastUpdateTime) @protobuf(6,bytes,opt)
+        lastTransitionTime?: TIME.#x                    @go(LastTransitionTime) @protobuf(7,bytes,opt)
+        reason?:             string                     @go(Reason) @protobuf(4,bytes,opt)
+        message?:            string                     @go(Message) @protobuf(5,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/apps/v1".#DeploymentConditionType
+    let DEPLOYMENTCONDITIONTYPE = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#Service
+    let SERVICE = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x    @go(ObjectMeta) @protobuf(1,bytes,opt)
+        spec?:     SERVICESPEC.#x   @go(Spec) @protobuf(2,bytes,opt)
+        status?:   SERVICESTATUS.#x @go(Status) @protobuf(3,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ServiceSpec
+    let SERVICESPEC = {
+      #x: {
+        ports?: [...SERVICEPORT.#x] @go(Ports,[]ServicePort) @protobuf(1,bytes,rep)
+        selector?: {
+          [string]: string
+        } @go(Selector,map[string]string) @protobuf(2,bytes,rep)
+        clusterIP?: string @go(ClusterIP) @protobuf(3,bytes,opt)
+        clusterIPs?: [...string] @go(ClusterIPs,[]string) @protobuf(18,bytes,opt)
+        type?: SERVICETYPE.#x @go(Type) @protobuf(4,bytes,opt,casttype=ServiceType)
+        externalIPs?: [...string] @go(ExternalIPs,[]string) @protobuf(5,bytes,rep)
+        sessionAffinity?: SERVICEAFFINITY.#x @go(SessionAffinity) @protobuf(7,bytes,opt,casttype=ServiceAffinity)
+        loadBalancerIP?:  string             @go(LoadBalancerIP) @protobuf(8,bytes,opt)
+        loadBalancerSourceRanges?: [...string] @go(LoadBalancerSourceRanges,[]string) @protobuf(9,bytes,opt)
+        externalName?:             string                          @go(ExternalName) @protobuf(10,bytes,opt)
+        externalTrafficPolicy?:    SERVICEEXTERNALTRAFFICPOLICY.#x @go(ExternalTrafficPolicy) @protobuf(11,bytes,opt)
+        healthCheckNodePort?:      int32                           @go(HealthCheckNodePort) @protobuf(12,bytes,opt)
+        publishNotReadyAddresses?: bool                            @go(PublishNotReadyAddresses) @protobuf(13,varint,opt)
+        sessionAffinityConfig?:    null | SESSIONAFFINITYCONFIG.#x @go(SessionAffinityConfig,*SessionAffinityConfig) @protobuf(14,bytes,opt)
+        ipFamilies?: [...IPFAMILY.#x] @go(IPFamilies,[]IPFamily) @protobuf(19,bytes,opt,casttype=IPFamily)
+        ipFamilyPolicy?:                null | IPFAMILYPOLICY.#x               @go(IPFamilyPolicy,*IPFamilyPolicy) @protobuf(17,bytes,opt,casttype=IPFamilyPolicy)
+        allocateLoadBalancerNodePorts?: null | bool                            @go(AllocateLoadBalancerNodePorts,*bool) @protobuf(20,bytes,opt)
+        loadBalancerClass?:             null | string                          @go(LoadBalancerClass,*string) @protobuf(21,bytes,opt)
+        internalTrafficPolicy?:         null | SERVICEINTERNALTRAFFICPOLICY.#x @go(InternalTrafficPolicy,*ServiceInternalTrafficPolicy) @protobuf(22,bytes,opt)
+        trafficDistribution?:           null | string                          @go(TrafficDistribution,*string) @protobuf(23,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ServicePort
+    let SERVICEPORT = {
+      #x: {
+        name?:        string         @go(Name) @protobuf(1,bytes,opt)
+        protocol?:    PROTOCOL.#x    @go(Protocol) @protobuf(2,bytes,opt,casttype=Protocol)
+        appProtocol?: null | string  @go(AppProtocol,*string) @protobuf(6,bytes,opt)
+        port:         int32          @go(Port) @protobuf(3,varint,opt)
+        targetPort?:  INTORSTRING.#x @go(TargetPort) @protobuf(4,bytes,opt)
+        nodePort?:    int32          @go(NodePort) @protobuf(5,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ServiceType
+    let SERVICETYPE = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ServiceAffinity
+    let SERVICEAFFINITY = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ServiceExternalTrafficPolicy
+    let SERVICEEXTERNALTRAFFICPOLICY = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#SessionAffinityConfig
+    let SESSIONAFFINITYCONFIG = {
+      #x: {
+        clientIP?: null | CLIENTIPCONFIG.#x @go(ClientIP,*ClientIPConfig) @protobuf(1,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ClientIPConfig
+    let CLIENTIPCONFIG = {
+      #x: {
+        timeoutSeconds?: null | int32 @go(TimeoutSeconds,*int32) @protobuf(1,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#IPFamily
+    let IPFAMILY = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#IPFamilyPolicy
+    let IPFAMILYPOLICY = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ServiceInternalTrafficPolicy
+    let SERVICEINTERNALTRAFFICPOLICY = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ServiceStatus
+    let SERVICESTATUS = {
+      #x: {
+        loadBalancer?: LOADBALANCERSTATUS.#x @go(LoadBalancer) @protobuf(1,bytes,opt)
+        conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition) @protobuf(2,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#LoadBalancerStatus
+    let LOADBALANCERSTATUS = {
+      #x: {
+        ingress?: [...LOADBALANCERINGRESS.#x] @go(Ingress,[]LoadBalancerIngress) @protobuf(1,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#LoadBalancerIngress
+    let LOADBALANCERINGRESS = {
+      #x: {
+        ip?:       string                       @go(IP) @protobuf(1,bytes,opt)
+        hostname?: string                       @go(Hostname) @protobuf(2,bytes,opt)
+        ipMode?:   null | LOADBALANCERIPMODE.#x @go(IPMode,*LoadBalancerIPMode) @protobuf(3,bytes,opt)
+        ports?: [...PORTSTATUS.#x] @go(Ports,[]PortStatus) @protobuf(4,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#LoadBalancerIPMode
+    let LOADBALANCERIPMODE = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#PortStatus
+    let PORTSTATUS = {
+      #x: {
+        port:     int32         @go(Port) @protobuf(1,varint,opt)
+        protocol: PROTOCOL.#x   @go(Protocol) @protobuf(2,bytes,opt,casttype=Protocol)
+        error?:   null | string @go(Error,*string) @protobuf(3,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/networking/v1".#Ingress
+    let INGRESS = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x    @go(ObjectMeta) @protobuf(1,bytes,opt)
+        spec?:     INGRESSSPEC.#x   @go(Spec) @protobuf(2,bytes,opt)
+        status?:   INGRESSSTATUS.#x @go(Status) @protobuf(3,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/networking/v1".#IngressSpec
+    let INGRESSSPEC = {
+      #x: {
+        ingressClassName?: null | string            @go(IngressClassName,*string) @protobuf(4,bytes,opt)
+        defaultBackend?:   null | INGRESSBACKEND.#x @go(DefaultBackend,*IngressBackend) @protobuf(1,bytes,opt)
+        tls?: [...INGRESSTLS.#x] @go(TLS,[]IngressTLS) @protobuf(2,bytes,rep)
+        rules?: [...INGRESSRULE.#x] @go(Rules,[]IngressRule) @protobuf(3,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/api/networking/v1".#IngressBackend
+    let INGRESSBACKEND = {
+      #x: {
+        service?:  null | INGRESSSERVICEBACKEND.#x     @go(Service,*IngressServiceBackend) @protobuf(4,bytes,opt)
+        resource?: null | TYPEDLOCALOBJECTREFERENCE.#x @go(Resource,*v1.TypedLocalObjectReference) @protobuf(3,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/networking/v1".#IngressServiceBackend
+    let INGRESSSERVICEBACKEND = {
+      #x: {
+        name:  string                @go(Name) @protobuf(1,bytes,opt)
+        port?: SERVICEBACKENDPORT.#x @go(Port) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/networking/v1".#ServiceBackendPort
+    let SERVICEBACKENDPORT = {
+      #x: {
+        name?:   string @go(Name) @protobuf(1,bytes,opt)
+        number?: int32  @go(Number) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/networking/v1".#IngressTLS
+    let INGRESSTLS = {
+      #x: {
+        hosts?: [...string] @go(Hosts,[]string) @protobuf(1,bytes,rep)
+        secretName?: string @go(SecretName) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/networking/v1".#IngressRule
+    let INGRESSRULE = {
+      #x: {
+        INGRESSRULEVALUE.#x
+        host?: string @go(Host) @protobuf(1,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/networking/v1".#IngressRuleValue
+    let INGRESSRULEVALUE = {
+      #x: {
+        http?: null | HTTPINGRESSRULEVALUE.#x @go(HTTP,*HTTPIngressRuleValue) @protobuf(1,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/networking/v1".#HTTPIngressRuleValue
+    let HTTPINGRESSRULEVALUE = {
+      #x: {
+        paths: [...HTTPINGRESSPATH.#x] @go(Paths,[]HTTPIngressPath) @protobuf(1,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/api/networking/v1".#HTTPIngressPath
+    let HTTPINGRESSPATH = {
+      #x: {
+        path?:     string             @go(Path) @protobuf(1,bytes,opt)
+        pathType?: null | PATHTYPE.#x @go(PathType,*PathType) @protobuf(3,bytes,opt)
+        backend:   INGRESSBACKEND.#x  @go(Backend) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/networking/v1".#PathType
+    let PATHTYPE = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/networking/v1".#IngressStatus
+    let INGRESSSTATUS = {
+      #x: {
+        loadBalancer?: INGRESSLOADBALANCERSTATUS.#x @go(LoadBalancer) @protobuf(1,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/networking/v1".#IngressLoadBalancerStatus
+    let INGRESSLOADBALANCERSTATUS = {
+      #x: {
+        ingress?: [...INGRESSLOADBALANCERINGRESS.#x] @go(Ingress,[]IngressLoadBalancerIngress) @protobuf(1,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/api/networking/v1".#IngressLoadBalancerIngress
+    let INGRESSLOADBALANCERINGRESS = {
+      #x: {
+        ip?:       string @go(IP) @protobuf(1,bytes,opt)
+        hostname?: string @go(Hostname) @protobuf(2,bytes,opt)
+        ports?: [...INGRESSPORTSTATUS.#x] @go(Ports,[]IngressPortStatus) @protobuf(4,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/api/networking/v1".#IngressPortStatus
+    let INGRESSPORTSTATUS = {
+      #x: {
+        port:     int32         @go(Port) @protobuf(1,varint,opt)
+        protocol: PROTOCOL.#x   @go(Protocol) @protobuf(2,bytes,opt,casttype=Protocol)
+        error?:   null | string @go(Error,*string) @protobuf(3,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/networking/v1".#PathTypePrefix
+    let PATHTYPEPREFIX = {
+      #x: PATHTYPE.#x & {
+        "Prefix"
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#Kustomization
+    let KUSTOMIZATION = {
+      #x: {
+        TYPEMETA_1.#x
+        metadata?: null | OBJECTMETA_1.#x @go(MetaData,*ObjectMeta)
+        openapi?: {
+          [string]: string
+        } @go(OpenAPI,map[string]string)
+        namePrefix?: string @go(NamePrefix)
+        nameSuffix?: string @go(NameSuffix)
+        namespace?:  string @go(Namespace)
+        commonLabels?: {
+          [string]: string
+        } @go(CommonLabels,map[string]string)
+        labels?: [...LABEL.#x] @go(Labels,[]Label)
+        commonAnnotations?: {
+          [string]: string
+        } @go(CommonAnnotations,map[string]string)
+        patchesStrategicMerge?: [...PATCHSTRATEGICMERGE.#x] @go(PatchesStrategicMerge,[]PatchStrategicMerge)
+        patchesJson6902?: [...PATCH.#x] @go(PatchesJson6902,[]Patch)
+        patches?: [...PATCH.#x] @go(Patches,[]Patch)
+        images?: [...IMAGE.#x] @go(Images,[]Image)
+        imageTags?: [...IMAGE.#x] @go(ImageTags,[]Image)
+        replacements?: [...REPLACEMENTFIELD.#x] @go(Replacements,[]ReplacementField)
+        replicas?: [...REPLICA.#x] @go(Replicas,[]Replica)
+        vars?: [...VAR.#x] @go(Vars,[]Var)
+        sortOptions?: null | SORTOPTIONS.#x @go(SortOptions,*SortOptions)
+        resources?: [...string] @go(Resources,[]string)
+        components?: [...string] @go(Components,[]string)
+        crds?: [...string] @go(Crds,[]string)
+        bases?: [...string] @go(Bases,[]string)
+        configMapGenerator?: [...CONFIGMAPARGS.#x] @go(ConfigMapGenerator,[]ConfigMapArgs)
+        secretGenerator?: [...SECRETARGS.#x] @go(SecretGenerator,[]SecretArgs)
+        helmGlobals?: null | HELMGLOBALS.#x @go(HelmGlobals,*HelmGlobals)
+        helmCharts?: [...HELMCHART.#x] @go(HelmCharts,[]HelmChart)
+        helmChartInflationGenerator?: [...HELMCHARTARGS.#x] @go(HelmChartInflationGenerator,[]HelmChartArgs)
+        generatorOptions?: null | GENERATOROPTIONS.#x @go(GeneratorOptions,*GeneratorOptions)
+        configurations?: [...string] @go(Configurations,[]string)
+        generators?: [...string] @go(Generators,[]string)
+        transformers?: [...string] @go(Transformers,[]string)
+        validators?: [...string] @go(Validators,[]string)
+        buildMetadata?: [...string] @go(BuildMetadata,[]string)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#TypeMeta
+    let TYPEMETA_1 = {
+      #x: {
+        kind?:       string @go(Kind)
+        apiVersion?: string @go(APIVersion)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#ObjectMeta
+    let OBJECTMETA_1 = {
+      #x: {
+        name?:      string @go(Name)
+        namespace?: string @go(Namespace)
+        labels?: {
+          [string]: string
+        } @go(Labels,map[string]string)
+        annotations?: {
+          [string]: string
+        } @go(Annotations,map[string]string)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#Label
+    let LABEL = {
+      #x: {
+        pairs?: {
+          [string]: string
+        } @go(Pairs,map[string]string)
+        includeSelectors?: bool @go(IncludeSelectors)
+        includeTemplates?: bool @go(IncludeTemplates)
+        fields?: [...FIELDSPEC.#x] @go(FieldSpecs,[]FieldSpec)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#FieldSpec
+    let FIELDSPEC = {
+      #x: {
+        GVK.#x
+        path?:   string @go(Path)
+        create?: bool   @go(CreateIfNotPresent)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/kyaml/resid".#Gvk
+    let GVK = {
+      #x: {
+        group?:   string @go(Group)
+        version?: string @go(Version)
+        kind?:    string @go(Kind)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#PatchStrategicMerge
+    let PATCHSTRATEGICMERGE = {
+      #x: string
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#Patch
+    let PATCH = {
+      #x: {
+        path?:   string             @go(Path)
+        patch?:  string             @go(Patch)
+        target?: null | SELECTOR.#x @go(Target,*Selector)
+        options?: {
+          [string]: bool
+        } @go(Options,map[string]bool)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#Selector
+    let SELECTOR = {
+      #x: {
+        RESID.#x
+        annotationSelector?: string @go(AnnotationSelector)
+        labelSelector?:      string @go(LabelSelector)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/kyaml/resid".#ResId
+    let RESID = {
+      #x: {
+        GVK.#x
+        name?:      string @go(Name)
+        namespace?: string @go(Namespace)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#Image
+    let IMAGE = {
+      #x: {
+        name?:      string @go(Name)
+        newName?:   string @go(NewName)
+        tagSuffix?: string @go(TagSuffix)
+        newTag?:    string @go(NewTag)
+        digest?:    string @go(Digest)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#ReplacementField
+    let REPLACEMENTFIELD = {
+      #x: {
+        REPLACEMENT.#x
+        path?: string @go(Path)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#Replacement
+    let REPLACEMENT = {
+      #x: {
+        source?: null | SOURCESELECTOR.#x @go(Source,*SourceSelector)
+        targets?: [...null | TARGETSELECTOR.#x] @go(Targets,[]*TargetSelector)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#SourceSelector
+    let SOURCESELECTOR = {
+      #x: {
+        RESID.#x
+        fieldPath?: string                 @go(FieldPath)
+        options?:   null | FIELDOPTIONS.#x @go(Options,*FieldOptions)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#FieldOptions
+    let FIELDOPTIONS = {
+      #x: {
+        delimiter?: string @go(Delimiter)
+        index?:     int    @go(Index)
+        encoding?:  string @go(Encoding)
+        create?:    bool   @go(Create)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#TargetSelector
+    let TARGETSELECTOR = {
+      #x: {
+        select?: null | SELECTOR.#x @go(Select,*Selector)
+        reject?: [...null | SELECTOR.#x] @go(Reject,[]*Selector)
+        fieldPaths?: [...string] @go(FieldPaths,[]string)
+        options?: null | FIELDOPTIONS.#x @go(Options,*FieldOptions)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#Replica
+    let REPLICA = {
+      #x: {
+        name?: string @go(Name)
+        count: int64  @go(Count)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#Var
+    let VAR = {
+      #x: {
+        name:      string           @go(Name)
+        objref:    TARGET.#x        @go(ObjRef)
+        fieldref?: FIELDSELECTOR.#x @go(FieldRef)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#Target
+    let TARGET = {
+      #x: {
+        GVK.#x
+        apiVersion?: string @go(APIVersion)
+        name:        string @go(Name)
+        namespace?:  string @go(Namespace)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#FieldSelector
+    let FIELDSELECTOR = {
+      #x: {
+        fieldPath?: string @go(FieldPath)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#SortOptions
+    let SORTOPTIONS = {
+      #x: {
+        order?:             SORTORDER.#x                @go(Order)
+        legacySortOptions?: null | LEGACYSORTOPTIONS.#x @go(LegacySortOptions,*LegacySortOptions)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#SortOrder
+    let SORTORDER = {
+      #x: string
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#LegacySortOptions
+    let LEGACYSORTOPTIONS = {
+      #x: {
+        orderFirst: [...string] @go(OrderFirst,[]string)
+        orderLast: [...string] @go(OrderLast,[]string)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#ConfigMapArgs
+    let CONFIGMAPARGS = {
+      #x: GENERATORARGS.#x
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#GeneratorArgs
+    let GENERATORARGS = {
+      #x: {
+        KVPAIRSOURCES.#x
+        namespace?: string                     @go(Namespace)
+        name?:      string                     @go(Name)
+        behavior?:  string                     @go(Behavior)
+        options?:   null | GENERATOROPTIONS.#x @go(Options,*GeneratorOptions)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#KvPairSources
+    let KVPAIRSOURCES = {
+      #x: {
+        literals?: [...string] @go(LiteralSources,[]string)
+        files?: [...string] @go(FileSources,[]string)
+        envs?: [...string] @go(EnvSources,[]string)
+        env?: string @go(EnvSource)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#GeneratorOptions
+    let GENERATOROPTIONS = {
+      #x: {
+        labels?: {
+          [string]: string
+        } @go(Labels,map[string]string)
+        annotations?: {
+          [string]: string
+        } @go(Annotations,map[string]string)
+        disableNameSuffixHash?: bool @go(DisableNameSuffixHash)
+        immutable?:             bool @go(Immutable)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#SecretArgs
+    let SECRETARGS = {
+      #x: {
+        GENERATORARGS.#x
+        type?: string @go(Type)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#HelmGlobals
+    let HELMGLOBALS = {
+      #x: {
+        chartHome?:  string @go(ChartHome)
+        configHome?: string @go(ConfigHome)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#HelmChart
+    let HELMCHART = {
+      #x: {
+        name?:        string @go(Name)
+        version?:     string @go(Version)
+        repo?:        string @go(Repo)
+        releaseName?: string @go(ReleaseName)
+        namespace?:   string @go(Namespace)
+        additionalValuesFiles?: [...string] @go(AdditionalValuesFiles,[]string)
+        valuesFile?: string @go(ValuesFile)
+        valuesInline?: {
+          ...
+        } @go(ValuesInline,map[string]interface{})
+        valuesMerge?: string @go(ValuesMerge)
+        includeCRDs?: bool   @go(IncludeCRDs)
+        skipHooks?:   bool   @go(SkipHooks)
+        apiVersions?: [...string] @go(ApiVersions,[]string)
+        kubeVersion?:  string @go(KubeVersion)
+        nameTemplate?: string @go(NameTemplate)
+        skipTests?:    bool   @go(SkipTests)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#HelmChartArgs
+    let HELMCHARTARGS = {
+      #x: {
+        chartName?:     string @go(ChartName)
+        chartVersion?:  string @go(ChartVersion)
+        chartRepoUrl?:  string @go(ChartRepoURL)
+        chartHome?:     string @go(ChartHome)
+        chartRepoName?: string @go(ChartRepoName)
+        helmBin?:       string @go(HelmBin)
+        helmHome?:      string @go(HelmHome)
+        values?:        string @go(Values)
+        valuesLocal?: {
+          ...
+        } @go(ValuesLocal,map[string]interface{})
+        valuesMerge?:      string @go(ValuesMerge)
+        releaseName?:      string @go(ReleaseName)
+        releaseNamespace?: string @go(ReleaseNamespace)
+        extraArgs?: [...string] @go(ExtraArgs,[]string)
+      }
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#Worktree
+    let WORKTREE = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x     @go(ObjectMeta)
+        spec?:     WORKTREESPEC.#x   @go(Spec)
+        status?:   WORKTREESTATUS.#x @go(Status)
+      }
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#WorktreeSpec
+    let WORKTREESPEC = {
+      #x: {
+        files?: {
+          [string]: bytes
+        } @go(Files,map[string][]byte)
+      }
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#WorktreeStatus
+    let WORKTREESTATUS = {
+      #x: {
+        conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition)
+        url?:           null | string @go(URL,*string)
+        referenceName?: null | string @go(ReferenceName,*string)
+        commitHash?:    null | string @go(CommitHash,*string)
+      }
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#WorktreeKind
+    let WORKTREEKIND = {
+      #x: "Worktree"
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#Kustomization
+    let KUSTOMIZATION_1 = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x          @go(ObjectMeta)
+        spec?:     KUSTOMIZATIONSPEC.#x   @go(Spec)
+        status?:   KUSTOMIZATIONSTATUS.#x @go(Status)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#KustomizationSpec
+    let KUSTOMIZATIONSPEC = {
+      #x: {
+        commonMetadata?: null | COMMONMETADATA.#x @go(CommonMetadata,*CommonMetadata)
+        dependsOn?: [...NAMESPACEDOBJECTREFERENCE.#x] @go(DependsOn,[]meta.NamespacedObjectReference)
+        decryption?:    null | DECRYPTION.#x          @go(Decryption,*Decryption)
+        interval:       DURATION.#x                   @go(Interval)
+        retryInterval?: null | DURATION.#x            @go(RetryInterval,*metav1.Duration)
+        kubeConfig?:    null | KUBECONFIGREFERENCE.#x @go(KubeConfig,*meta.KubeConfigReference)
+        path?:          string                        @go(Path)
+        postBuild?:     null | POSTBUILD.#x           @go(PostBuild,*PostBuild)
+        prune:          bool                          @go(Prune)
+        healthChecks?: [...NAMESPACEDOBJECTKINDREFERENCE.#x] @go(HealthChecks,[]meta.NamespacedObjectKindReference)
+        namePrefix?: string @go(NamePrefix)
+        nameSuffix?: string @go(NameSuffix)
+        patches?: [...PATCH_1.#x] @go(Patches,[]kustomize.Patch)
+        images?: [...IMAGE_1.#x] @go(Images,[]kustomize.Image)
+        serviceAccountName?: string                           @go(ServiceAccountName)
+        sourceRef:           CROSSNAMESPACESOURCEREFERENCE.#x @go(SourceRef)
+        suspend?:            bool                             @go(Suspend)
+        targetNamespace?:    string                           @go(TargetNamespace)
+        timeout?:            null | DURATION.#x               @go(Timeout,*metav1.Duration)
+        force?:              bool                             @go(Force)
+        wait?:               bool                             @go(Wait)
+        components?: [...string] @go(Components,[]string)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#CommonMetadata
+    let COMMONMETADATA = {
+      #x: {
+        annotations?: {
+          [string]: string
+        } @go(Annotations,map[string]string)
+        labels?: {
+          [string]: string
+        } @go(Labels,map[string]string)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#NamespacedObjectReference
+    let NAMESPACEDOBJECTREFERENCE = {
+      #x: {
+        name:       string @go(Name)
+        namespace?: string @go(Namespace)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#Decryption
+    let DECRYPTION = {
+      #x: {
+        provider:   string                           @go(Provider)
+        secretRef?: null | LOCALOBJECTREFERENCE_1.#x @go(SecretRef,*meta.LocalObjectReference)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#LocalObjectReference
+    let LOCALOBJECTREFERENCE_1 = {
+      #x: {
+        name: string @go(Name)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#KubeConfigReference
+    let KUBECONFIGREFERENCE = {
+      #x: {
+        configMapRef?: null | LOCALOBJECTREFERENCE_1.#x @go(ConfigMapRef,*LocalObjectReference)
+        secretRef?:    null | SECRETKEYREFERENCE.#x     @go(SecretRef,*SecretKeyReference)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#SecretKeyReference
+    let SECRETKEYREFERENCE = {
+      #x: {
+        name: string @go(Name)
+        key?: string @go(Key)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#PostBuild
+    let POSTBUILD = {
+      #x: {
+        substitute?: {
+          [string]: string
+        } @go(Substitute,map[string]string)
+        substituteFrom?: [...SUBSTITUTEREFERENCE.#x] @go(SubstituteFrom,[]SubstituteReference)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#SubstituteReference
+    let SUBSTITUTEREFERENCE = {
+      #x: {
+        kind:      string @go(Kind)
+        name:      string @go(Name)
+        optional?: bool   @go(Optional)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#NamespacedObjectKindReference
+    let NAMESPACEDOBJECTKINDREFERENCE = {
+      #x: {
+        apiVersion?: string @go(APIVersion)
+        kind:        string @go(Kind)
+        name:        string @go(Name)
+        namespace?:  string @go(Namespace)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/kustomize".#Patch
+    let PATCH_1 = {
+      #x: {
+        patch:   string               @go(Patch)
+        target?: null | SELECTOR_1.#x @go(Target,*Selector)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/kustomize".#Selector
+    let SELECTOR_1 = {
+      #x: {
+        group?:              string @go(Group)
+        version?:            string @go(Version)
+        kind?:               string @go(Kind)
+        namespace?:          string @go(Namespace)
+        name?:               string @go(Name)
+        annotationSelector?: string @go(AnnotationSelector)
+        labelSelector?:      string @go(LabelSelector)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/kustomize".#Image
+    let IMAGE_1 = {
+      #x: {
+        name:     string @go(Name)
+        newName?: string @go(NewName)
+        newTag?:  string @go(NewTag)
+        digest?:  string @go(Digest)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#CrossNamespaceSourceReference
+    let CROSSNAMESPACESOURCEREFERENCE = {
+      #x: {
+        apiVersion?: string @go(APIVersion)
+        kind:        string @go(Kind)
+        name:        string @go(Name)
+        namespace?:  string @go(Namespace)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#KustomizationStatus
+    let KUSTOMIZATIONSTATUS = {
+      #x: {
+        RECONCILEREQUESTSTATUS.#x
+        observedGeneration?: int64 @go(ObservedGeneration)
+        conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition)
+        lastAppliedRevision?:   string                      @go(LastAppliedRevision)
+        lastAttemptedRevision?: string                      @go(LastAttemptedRevision)
+        inventory?:             null | RESOURCEINVENTORY.#x @go(Inventory,*ResourceInventory)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#ReconcileRequestStatus
+    let RECONCILEREQUESTSTATUS = {
+      #x: {
+        lastHandledReconcileAt?: string @go(LastHandledReconcileAt)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#ResourceInventory
+    let RESOURCEINVENTORY = {
+      #x: {
+        entries: [...RESOURCEREF.#x] @go(Entries,[]ResourceRef)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#ResourceRef
+    let RESOURCEREF = {
+      #x: {
+        id: string @go(ID)
+        v:  string @go(Version)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#KustomizationKind
+    let KUSTOMIZATIONKIND = {
+      #x: "Kustomization"
+    }
+
+    //cue:path: "github.com/fluxcd/source-controller/api/v1".#GitRepositoryKind
+    let GITREPOSITORYKIND = {
+      #x: "GitRepository"
     }
   type: dockyards.io/cue
