@@ -37,6 +37,8 @@ type generator struct {
 	resources []string
 }
 
+var re *regexp.Regexp
+
 func (g *generator) walkDir(path string, dirEntry fs.DirEntry, err error) error {
 	if err != nil {
 		return err
@@ -84,7 +86,9 @@ func (g *generator) walkDir(path string, dirEntry fs.DirEntry, err error) error 
 		return err
 	}
 
-	re := regexp.MustCompile(`[^\w]`)
+	if re == nil {
+		re = regexp.MustCompile(`[^\w]`)
+	}
 
 	clean := re.ReplaceAllString(name, "")
 
