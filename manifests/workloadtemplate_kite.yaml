@@ -20,17 +20,10 @@ spec:
   source: |
     package template
 
-    import (
-      "strings"
-
-      sourcev1 "github.com/fluxcd/source-controller/api/v1"
-      helmv2 "github.com/fluxcd/helm-controller/api/v2"
-      dockyardsv1 "github.com/sudoswedenab/dockyards-backend/api/v1alpha3"
-    )
+    import "strings"
 
     #StorageClass:    "cephfs" | "rbd"
-    #StorageQuantity: string & =~"^([0-9]+(\\.[0-9]+)?)(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$"
-
+    #StorageQuantity: =~"^([0-9]+(\\.[0-9]+)?)(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$"
     #Input: {
       chart:      string | *"kite"
       repository: string & =~"^(http?s|oci)://.*$" | *"https://zxh326.github.io/kite"
@@ -48,17 +41,63 @@ spec:
         }
       }
     }
-
-    #cluster: dockyardsv1.#Cluster
-
-    #workload: dockyardsv1.#Workload
-    #workload: spec: input: #Input
-
+    #cluster: {
+      TYPEMETA.#x
+      metadata?: OBJECTMETA.#x @go(ObjectMeta)
+      spec?: {
+        version?:                  string @go(Version)
+        noDefaultIngressProvider?: bool   @go(NoDefaultIngressProvider)
+        upgrades?: [...{
+          to: string @go(To)
+        }] @go(Upgrades,[]ClusterUpgrade)
+        blockDeletion?:          bool                                @go(BlockDeletion)
+        allocateInternalIP?:     bool                                @go(AllocateInternalIP)
+        ipPoolRef?:              null | TYPEDLOCALOBJECTREFERENCE.#x @go(IPPoolRef,*corev1.TypedLocalObjectReference)
+        duration?:               null | DURATION.#x                  @go(Duration,*metav1.Duration)
+        noDefaultNetworkPlugin?: bool                                @go(NoDefaultNetworkPlugin)
+        podSubnets?: [...string] @go(PodSubnets,[]string)
+        serviceSubnets?: [...string] @go(ServiceSubnets,[]string)
+      } @go(Spec)
+      status?: {
+        conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition)
+        clusterServiceID?: string @go(ClusterServiceID)
+        version?:          string @go(Version)
+        dnsZones?: [...string] @go(DNSZones,[]string)
+        apiEndpoint?: {
+          host: string @go(Host)
+          port: int32  @go(Port)
+        } @go(APIEndpoint)
+        expirationTimestamp?: null | TIME.#x @go(ExpirationTimestamp,*metav1.Time)
+      } @go(Status)
+    }
+    #workload: {
+      TYPEMETA.#x
+      metadata?: OBJECTMETA.#x @go(ObjectMeta)
+      spec?: {
+        clusterComponent?:      bool                           @go(ClusterComponent)
+        targetNamespace:        string                         @go(TargetNamespace)
+        workloadTemplateInput?: null | JSON.#x                 @go(WorkloadTemplateInput,*apiextensionsv1.JSON)
+        input?:                 null | JSON.#x                 @go(Input,*apiextensionsv1.JSON)
+        workloadTemplateRef?:   null | TYPEDOBJECTREFERENCE.#x @go(WorkloadTemplateRef,*corev1.TypedObjectReference)
+        provenience:            string                         @go(Provenience)
+      } @go(Spec)
+      status?: {
+        conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition)
+        dependencyRefs?: [...TYPEDLOCALOBJECTREFERENCE.#x] @go(DependencyRefs,[]corev1.TypedLocalObjectReference)
+        urls?: [...string] @go(URLs,[]string)
+        references?: [...{
+          TYPEDOBJECTREFERENCE.#x
+          parent?: null | TYPEDLOCALOBJECTREFERENCE.#x @go(Parent,*corev1.TypedLocalObjectReference)
+          urls?: [...string] @go(URLs,[]string)
+        }] @go(References,[]WorkloadReference)
+      } @go(Status)
+    } & {
+      spec: input: #Input
+    }
     #ingressHost: #workload.spec.targetNamespace + #workload.spec.input.domain
-
-    helmRepository: sourcev1.#HelmRepository & {
+    helmRepository: HELMREPOSITORY.#x & {
       apiVersion: "source.toolkit.fluxcd.io/v1"
-      kind:       sourcev1.#HelmRepositoryKind
+      kind:       HELMREPOSITORYKIND.#x
       metadata: {
         name:      #workload.metadata.name
         namespace: #workload.metadata.namespace
@@ -71,10 +110,9 @@ spec:
         }
       }
     }
-
-    helmRelease: helmv2.#HelmRelease & {
+    helmRelease: HELMRELEASE.#x & {
       apiVersion: "helm.toolkit.fluxcd.io/v2"
-      kind:       helmv2.#HelmReleaseKind
+      kind:       HELMRELEASEKIND.#x
       metadata: {
         name:      #workload.metadata.name
         namespace: #workload.metadata.namespace
@@ -96,7 +134,6 @@ spec:
         kubeConfig: secretRef: name: #cluster.metadata.name + "-kubeconfig"
         storageNamespace: #workload.spec.targetNamespace
         targetNamespace:  #workload.spec.targetNamespace
-
         values: {
           if #workload.spec.input.persistence.enabled {
             db: sqlite: persistence: pvc: {
@@ -116,22 +153,607 @@ spec:
                   annotations: "cert-manager.io/cluster-issuer": "letsencrypt"
                 }
               }
-              hosts:
-              [
-                {
-                  host: #ingressHost
-                  paths:
-                  [
-                    {
-                      path:     "/"
-                      pathType: "Prefix"
-                    },
-                  ]
-                },
-              ]
+              hosts: [{
+                host: #ingressHost
+                paths: [{
+                  path:     "/"
+                  pathType: "Prefix"
+                }]
+              }]
             }
           }
         }
       }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#TypeMeta
+    let TYPEMETA = {
+      #x: {
+        kind?:       string @go(Kind) @protobuf(1,bytes,opt)
+        apiVersion?: string @go(APIVersion) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#ObjectMeta
+    let OBJECTMETA = {
+      #x: {
+        name?:                       string  @go(Name) @protobuf(1,bytes,opt)
+        generateName?:               string  @go(GenerateName) @protobuf(2,bytes,opt)
+        namespace?:                  string  @go(Namespace) @protobuf(3,bytes,opt)
+        selfLink?:                   string  @go(SelfLink) @protobuf(4,bytes,opt)
+        uid?:                        UID.#x  @go(UID) @protobuf(5,bytes,opt,casttype=k8s.io/kubernetes/pkg/types.UID)
+        resourceVersion?:            string  @go(ResourceVersion) @protobuf(6,bytes,opt)
+        generation?:                 int64   @go(Generation) @protobuf(7,varint,opt)
+        creationTimestamp?:          TIME.#x @go(CreationTimestamp) @protobuf(8,bytes,opt)
+        deletionTimestamp?:          TIME.#x @go(DeletionTimestamp,*Time) @protobuf(9,bytes,opt)
+        deletionGracePeriodSeconds?: int64   @go(DeletionGracePeriodSeconds,*int64) @protobuf(10,varint,opt)
+        labels?: {
+          [string]: string
+        } @go(Labels,map[string]string) @protobuf(11,bytes,rep)
+        annotations?: {
+          [string]: string
+        } @go(Annotations,map[string]string) @protobuf(12,bytes,rep)
+        ownerReferences?: [...OWNERREFERENCE.#x] @go(OwnerReferences,[]OwnerReference) @protobuf(13,bytes,rep)
+        finalizers?: [...string] @go(Finalizers,[]string) @protobuf(14,bytes,rep)
+        managedFields?: [...MANAGEDFIELDSENTRY.#x] @go(ManagedFields,[]ManagedFieldsEntry) @protobuf(17,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/types".#UID
+    let UID = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#Time
+    let TIME = {
+      #x: _
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#OwnerReference
+    let OWNERREFERENCE = {
+      #x: {
+        apiVersion:          string @go(APIVersion) @protobuf(5,bytes,opt)
+        kind:                string @go(Kind) @protobuf(1,bytes,opt)
+        name:                string @go(Name) @protobuf(3,bytes,opt)
+        uid:                 UID.#x @go(UID) @protobuf(4,bytes,opt,casttype=k8s.io/apimachinery/pkg/types.UID)
+        controller?:         bool   @go(Controller,*bool) @protobuf(6,varint,opt)
+        blockOwnerDeletion?: bool   @go(BlockOwnerDeletion,*bool) @protobuf(7,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#ManagedFieldsEntry
+    let MANAGEDFIELDSENTRY = {
+      #x: {
+        manager?:     string                        @go(Manager) @protobuf(1,bytes,opt)
+        operation?:   MANAGEDFIELDSOPERATIONTYPE.#x @go(Operation) @protobuf(2,bytes,opt,casttype=ManagedFieldsOperationType)
+        apiVersion?:  string                        @go(APIVersion) @protobuf(3,bytes,opt)
+        time?:        TIME.#x                       @go(Time,*Time) @protobuf(4,bytes,opt)
+        fieldsType?:  string                        @go(FieldsType) @protobuf(6,bytes,opt)
+        fieldsV1?:    FIELDSV1.#x                   @go(FieldsV1,*FieldsV1) @protobuf(7,bytes,opt)
+        subresource?: string                        @go(Subresource) @protobuf(8,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#ManagedFieldsOperationType
+    let MANAGEDFIELDSOPERATIONTYPE = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#FieldsV1
+    let FIELDSV1 = {
+      #x: _
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#TypedLocalObjectReference
+    let TYPEDLOCALOBJECTREFERENCE = {
+      #x: {
+        apiGroup?: null | string @go(APIGroup,*string) @protobuf(1,bytes,opt)
+        kind:      string        @go(Kind) @protobuf(2,bytes,opt)
+        name:      string        @go(Name) @protobuf(3,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#Duration
+    let DURATION = {
+      #x: _
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#Condition
+    let CONDITION = {
+      #x: {
+        type:                string             @go(Type) @protobuf(1,bytes,opt)
+        status:              CONDITIONSTATUS.#x @go(Status) @protobuf(2,bytes,opt)
+        observedGeneration?: int64              @go(ObservedGeneration) @protobuf(3,varint,opt)
+        lastTransitionTime:  TIME.#x            @go(LastTransitionTime) @protobuf(4,bytes,opt)
+        reason:              string             @go(Reason) @protobuf(5,bytes,opt)
+        message:             string             @go(Message) @protobuf(6,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#ConditionStatus
+    let CONDITIONSTATUS = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1".#JSON
+    let JSON = {
+      #x: _
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#TypedObjectReference
+    let TYPEDOBJECTREFERENCE = {
+      #x: {
+        apiGroup?:  null | string @go(APIGroup,*string) @protobuf(1,bytes,opt)
+        kind:       string        @go(Kind) @protobuf(2,bytes,opt)
+        name:       string        @go(Name) @protobuf(3,bytes,opt)
+        namespace?: null | string @go(Namespace,*string) @protobuf(4,bytes,opt)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/source-controller/api/v1".#HelmRepository
+    let HELMREPOSITORY = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x           @go(ObjectMeta)
+        spec?:     HELMREPOSITORYSPEC.#x   @go(Spec)
+        status?:   HELMREPOSITORYSTATUS.#x @go(Status)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/source-controller/api/v1".#HelmRepositorySpec
+    let HELMREPOSITORYSPEC = {
+      #x: {
+        url:              string                         @go(URL)
+        secretRef?:       null | LOCALOBJECTREFERENCE.#x @go(SecretRef,*meta.LocalObjectReference)
+        certSecretRef?:   null | LOCALOBJECTREFERENCE.#x @go(CertSecretRef,*meta.LocalObjectReference)
+        passCredentials?: bool                           @go(PassCredentials)
+        interval?:        DURATION.#x                    @go(Interval)
+        insecure?:        bool                           @go(Insecure)
+        timeout?:         null | DURATION.#x             @go(Timeout,*metav1.Duration)
+        suspend?:         bool                           @go(Suspend)
+        accessFrom?:      null | ACCESSFROM.#x           @go(AccessFrom,*acl.AccessFrom)
+        type?:            string                         @go(Type)
+        provider?:        string                         @go(Provider)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#LocalObjectReference
+    let LOCALOBJECTREFERENCE = {
+      #x: {
+        name: string @go(Name)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/acl".#AccessFrom
+    let ACCESSFROM = {
+      #x: {
+        namespaceSelectors: [...NAMESPACESELECTOR.#x] @go(NamespaceSelectors,[]NamespaceSelector)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/acl".#NamespaceSelector
+    let NAMESPACESELECTOR = {
+      #x: {
+        matchLabels?: {
+          [string]: string
+        } @go(MatchLabels,map[string]string)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/source-controller/api/v1".#HelmRepositoryStatus
+    let HELMREPOSITORYSTATUS = {
+      #x: {
+        RECONCILEREQUESTSTATUS.#x
+        observedGeneration?: int64 @go(ObservedGeneration)
+        conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition)
+        url?:      string             @go(URL)
+        artifact?: null | ARTIFACT.#x @go(Artifact,*meta.Artifact)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#Artifact
+    let ARTIFACT = {
+      #x: {
+        digest:         string       @go(Digest)
+        path:           string       @go(Path)
+        url:            string       @go(URL)
+        revision:       string       @go(Revision)
+        lastUpdateTime: TIME.#x      @go(LastUpdateTime)
+        size?:          null | int64 @go(Size,*int64)
+        metadata?: {
+          [string]: string
+        } @go(Metadata,map[string]string)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#ReconcileRequestStatus
+    let RECONCILEREQUESTSTATUS = {
+      #x: {
+        lastHandledReconcileAt?: string @go(LastHandledReconcileAt)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/source-controller/api/v1".#HelmRepositoryKind
+    let HELMREPOSITORYKIND = {
+      #x: "HelmRepository"
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#HelmRelease
+    let HELMRELEASE = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x        @go(ObjectMeta)
+        spec?:     HELMRELEASESPEC.#x   @go(Spec)
+        status?:   HELMRELEASESTATUS.#x @go(Status)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#HelmReleaseSpec
+    let HELMRELEASESPEC = {
+      #x: {
+        chart?:            null | HELMCHARTTEMPLATE.#x             @go(Chart,*HelmChartTemplate)
+        chartRef?:         null | CROSSNAMESPACESOURCEREFERENCE.#x @go(ChartRef,*CrossNamespaceSourceReference)
+        interval:          DURATION.#x                             @go(Interval)
+        kubeConfig?:       null | KUBECONFIGREFERENCE.#x           @go(KubeConfig,*meta.KubeConfigReference)
+        suspend?:          bool                                    @go(Suspend)
+        releaseName?:      string                                  @go(ReleaseName)
+        targetNamespace?:  string                                  @go(TargetNamespace)
+        storageNamespace?: string                                  @go(StorageNamespace)
+        dependsOn?: [...NAMESPACEDOBJECTREFERENCE.#x] @go(DependsOn,[]meta.NamespacedObjectReference)
+        timeout?:            null | DURATION.#x       @go(Timeout,*metav1.Duration)
+        maxHistory?:         null | int               @go(MaxHistory,*int)
+        serviceAccountName?: string                   @go(ServiceAccountName)
+        persistentClient?:   null | bool              @go(PersistentClient,*bool)
+        driftDetection?:     null | DRIFTDETECTION.#x @go(DriftDetection,*DriftDetection)
+        install?:            null | INSTALL.#x        @go(Install,*Install)
+        upgrade?:            null | UPGRADE.#x        @go(Upgrade,*Upgrade)
+        test?:               null | TEST.#x           @go(Test,*Test)
+        rollback?:           null | ROLLBACK.#x       @go(Rollback,*Rollback)
+        uninstall?:          null | UNINSTALL.#x      @go(Uninstall,*Uninstall)
+        valuesFrom?: [...VALUESREFERENCE.#x] @go(ValuesFrom,[]ValuesReference)
+        values?: null | JSON.#x @go(Values,*apiextensionsv1.JSON)
+        postRenderers?: [...POSTRENDERER.#x] @go(PostRenderers,[]PostRenderer)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#HelmChartTemplate
+    let HELMCHARTTEMPLATE = {
+      #x: {
+        metadata?: null | HELMCHARTTEMPLATEOBJECTMETA.#x @go(ObjectMeta,*HelmChartTemplateObjectMeta)
+        spec:      HELMCHARTTEMPLATESPEC.#x              @go(Spec)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#HelmChartTemplateObjectMeta
+    let HELMCHARTTEMPLATEOBJECTMETA = {
+      #x: {
+        labels?: {
+          [string]: string
+        } @go(Labels,map[string]string)
+        annotations?: {
+          [string]: string
+        } @go(Annotations,map[string]string)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#HelmChartTemplateSpec
+    let HELMCHARTTEMPLATESPEC = {
+      #x: {
+        chart:              string                           @go(Chart)
+        version?:           string                           @go(Version)
+        sourceRef:          CROSSNAMESPACEOBJECTREFERENCE.#x @go(SourceRef)
+        interval?:          null | DURATION.#x               @go(Interval,*metav1.Duration)
+        reconcileStrategy?: string                           @go(ReconcileStrategy)
+        valuesFiles?: [...string] @go(ValuesFiles,[]string)
+        ignoreMissingValuesFiles?: bool                                    @go(IgnoreMissingValuesFiles)
+        verify?:                   null | HELMCHARTTEMPLATEVERIFICATION.#x @go(Verify,*HelmChartTemplateVerification)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#CrossNamespaceObjectReference
+    let CROSSNAMESPACEOBJECTREFERENCE = {
+      #x: {
+        apiVersion?: string @go(APIVersion)
+        kind?:       string @go(Kind)
+        name:        string @go(Name)
+        namespace?:  string @go(Namespace)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#HelmChartTemplateVerification
+    let HELMCHARTTEMPLATEVERIFICATION = {
+      #x: {
+        provider:   string                         @go(Provider)
+        secretRef?: null | LOCALOBJECTREFERENCE.#x @go(SecretRef,*meta.LocalObjectReference)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#CrossNamespaceSourceReference
+    let CROSSNAMESPACESOURCEREFERENCE = {
+      #x: {
+        apiVersion?: string @go(APIVersion)
+        kind:        string @go(Kind)
+        name:        string @go(Name)
+        namespace?:  string @go(Namespace)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#KubeConfigReference
+    let KUBECONFIGREFERENCE = {
+      #x: {
+        configMapRef?: null | LOCALOBJECTREFERENCE.#x @go(ConfigMapRef,*LocalObjectReference)
+        secretRef?:    null | SECRETKEYREFERENCE.#x   @go(SecretRef,*SecretKeyReference)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#SecretKeyReference
+    let SECRETKEYREFERENCE = {
+      #x: {
+        name: string @go(Name)
+        key?: string @go(Key)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#NamespacedObjectReference
+    let NAMESPACEDOBJECTREFERENCE = {
+      #x: {
+        name:       string @go(Name)
+        namespace?: string @go(Namespace)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#DriftDetection
+    let DRIFTDETECTION = {
+      #x: {
+        mode?: DRIFTDETECTIONMODE.#x @go(Mode)
+        ignore?: [...IGNORERULE.#x] @go(Ignore,[]IgnoreRule)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#DriftDetectionMode
+    let DRIFTDETECTIONMODE = {
+      #x: string
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#IgnoreRule
+    let IGNORERULE = {
+      #x: {
+        paths: [...string] @go(Paths,[]string)
+        target?: null | SELECTOR.#x @go(Target,*kustomize.Selector)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/kustomize".#Selector
+    let SELECTOR = {
+      #x: {
+        group?:              string @go(Group)
+        version?:            string @go(Version)
+        kind?:               string @go(Kind)
+        namespace?:          string @go(Namespace)
+        name?:               string @go(Name)
+        annotationSelector?: string @go(AnnotationSelector)
+        labelSelector?:      string @go(LabelSelector)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#Install
+    let INSTALL = {
+      #x: {
+        timeout?:                  null | DURATION.#x           @go(Timeout,*metav1.Duration)
+        remediation?:              null | INSTALLREMEDIATION.#x @go(Remediation,*InstallRemediation)
+        disableWait?:              bool                         @go(DisableWait)
+        disableWaitForJobs?:       bool                         @go(DisableWaitForJobs)
+        disableHooks?:             bool                         @go(DisableHooks)
+        disableOpenAPIValidation?: bool                         @go(DisableOpenAPIValidation)
+        disableSchemaValidation?:  bool                         @go(DisableSchemaValidation)
+        replace?:                  bool                         @go(Replace)
+        skipCRDs?:                 bool                         @go(SkipCRDs)
+        crds?:                     CRDSPOLICY.#x                @go(CRDs)
+        createNamespace?:          bool                         @go(CreateNamespace)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#InstallRemediation
+    let INSTALLREMEDIATION = {
+      #x: {
+        retries?:              int         @go(Retries)
+        ignoreTestFailures?:   null | bool @go(IgnoreTestFailures,*bool)
+        remediateLastFailure?: null | bool @go(RemediateLastFailure,*bool)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#CRDsPolicy
+    let CRDSPOLICY = {
+      #x: string
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#Upgrade
+    let UPGRADE = {
+      #x: {
+        timeout?:                  null | DURATION.#x           @go(Timeout,*metav1.Duration)
+        remediation?:              null | UPGRADEREMEDIATION.#x @go(Remediation,*UpgradeRemediation)
+        disableWait?:              bool                         @go(DisableWait)
+        disableWaitForJobs?:       bool                         @go(DisableWaitForJobs)
+        disableHooks?:             bool                         @go(DisableHooks)
+        disableOpenAPIValidation?: bool                         @go(DisableOpenAPIValidation)
+        disableSchemaValidation?:  bool                         @go(DisableSchemaValidation)
+        force?:                    bool                         @go(Force)
+        preserveValues?:           bool                         @go(PreserveValues)
+        cleanupOnFail?:            bool                         @go(CleanupOnFail)
+        crds?:                     CRDSPOLICY.#x                @go(CRDs)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#UpgradeRemediation
+    let UPGRADEREMEDIATION = {
+      #x: {
+        retries?:              int                           @go(Retries)
+        ignoreTestFailures?:   null | bool                   @go(IgnoreTestFailures,*bool)
+        remediateLastFailure?: null | bool                   @go(RemediateLastFailure,*bool)
+        strategy?:             null | REMEDIATIONSTRATEGY.#x @go(Strategy,*RemediationStrategy)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#RemediationStrategy
+    let REMEDIATIONSTRATEGY = {
+      #x: string
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#Test
+    let TEST = {
+      #x: {
+        enable?:         bool               @go(Enable)
+        timeout?:        null | DURATION.#x @go(Timeout,*metav1.Duration)
+        ignoreFailures?: bool               @go(IgnoreFailures)
+        filters?: null | [...FILTER.#x] @go(Filters,*[]Filter)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#Filter
+    let FILTER = {
+      #x: {
+        name:     string @go(Name)
+        exclude?: bool   @go(Exclude)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#Rollback
+    let ROLLBACK = {
+      #x: {
+        timeout?:            null | DURATION.#x @go(Timeout,*metav1.Duration)
+        disableWait?:        bool               @go(DisableWait)
+        disableWaitForJobs?: bool               @go(DisableWaitForJobs)
+        disableHooks?:       bool               @go(DisableHooks)
+        recreate?:           bool               @go(Recreate)
+        force?:              bool               @go(Force)
+        cleanupOnFail?:      bool               @go(CleanupOnFail)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#Uninstall
+    let UNINSTALL = {
+      #x: {
+        timeout?:             null | DURATION.#x @go(Timeout,*metav1.Duration)
+        disableHooks?:        bool               @go(DisableHooks)
+        keepHistory?:         bool               @go(KeepHistory)
+        disableWait?:         bool               @go(DisableWait)
+        deletionPropagation?: null | string      @go(DeletionPropagation,*string)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#ValuesReference
+    let VALUESREFERENCE = {
+      #x: {
+        kind:        string @go(Kind)
+        name:        string @go(Name)
+        valuesKey?:  string @go(ValuesKey)
+        targetPath?: string @go(TargetPath)
+        optional?:   bool   @go(Optional)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#PostRenderer
+    let POSTRENDERER = {
+      #x: {
+        kustomize?: null | KUSTOMIZE.#x @go(Kustomize,*Kustomize)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#Kustomize
+    let KUSTOMIZE = {
+      #x: {
+        patches?: [...PATCH.#x] @go(Patches,[]kustomize.Patch)
+        images?: [...IMAGE.#x] @go(Images,[]kustomize.Image)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/kustomize".#Patch
+    let PATCH = {
+      #x: {
+        patch:   string             @go(Patch)
+        target?: null | SELECTOR.#x @go(Target,*Selector)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/kustomize".#Image
+    let IMAGE = {
+      #x: {
+        name:     string @go(Name)
+        newName?: string @go(NewName)
+        newTag?:  string @go(NewTag)
+        digest?:  string @go(Digest)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#HelmReleaseStatus
+    let HELMRELEASESTATUS = {
+      #x: {
+        RECONCILEREQUESTSTATUS.#x
+        observedGeneration?:          int64  @go(ObservedGeneration)
+        observedPostRenderersDigest?: string @go(ObservedPostRenderersDigest)
+        lastAttemptedGeneration?:     int64  @go(LastAttemptedGeneration)
+        conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition)
+        helmChart?:                   string           @go(HelmChart)
+        storageNamespace?:            string           @go(StorageNamespace)
+        history?:                     SNAPSHOTS.#x     @go(History)
+        lastAttemptedReleaseAction?:  RELEASEACTION.#x @go(LastAttemptedReleaseAction)
+        failures?:                    int64            @go(Failures)
+        installFailures?:             int64            @go(InstallFailures)
+        upgradeFailures?:             int64            @go(UpgradeFailures)
+        lastAttemptedRevision?:       string           @go(LastAttemptedRevision)
+        lastAttemptedRevisionDigest?: string           @go(LastAttemptedRevisionDigest)
+        lastAttemptedValuesChecksum?: string           @go(LastAttemptedValuesChecksum)
+        lastReleaseRevision?:         int              @go(LastReleaseRevision)
+        lastAttemptedConfigDigest?:   string           @go(LastAttemptedConfigDigest)
+        lastHandledForceAt?:          string           @go(LastHandledForceAt)
+        lastHandledResetAt?:          string           @go(LastHandledResetAt)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#Snapshots
+    let SNAPSHOTS = {
+      #x: [...null | SNAPSHOT.#x]
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#Snapshot
+    let SNAPSHOT = {
+      #x: {
+        apiVersion?:   string  @go(APIVersion)
+        digest:        string  @go(Digest)
+        name:          string  @go(Name)
+        namespace:     string  @go(Namespace)
+        version:       int     @go(Version)
+        status:        string  @go(Status)
+        chartName:     string  @go(ChartName)
+        chartVersion:  string  @go(ChartVersion)
+        appVersion?:   string  @go(AppVersion)
+        configDigest:  string  @go(ConfigDigest)
+        firstDeployed: TIME.#x @go(FirstDeployed)
+        lastDeployed:  TIME.#x @go(LastDeployed)
+        deleted?:      TIME.#x @go(Deleted)
+        testHooks?: null | {
+          [string]: null | TESTHOOKSTATUS.#x
+        } @go(TestHooks,*map[string]*TestHookStatus)
+        ociDigest?: string @go(OCIDigest)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#TestHookStatus
+    let TESTHOOKSTATUS = {
+      #x: {
+        lastStarted?:   TIME.#x @go(LastStarted)
+        lastCompleted?: TIME.#x @go(LastCompleted)
+        phase?:         string  @go(Phase)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#ReleaseAction
+    let RELEASEACTION = {
+      #x: string
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#HelmReleaseKind
+    let HELMRELEASEKIND = {
+      #x: "HelmRelease"
     }
   type: dockyards.io/cue

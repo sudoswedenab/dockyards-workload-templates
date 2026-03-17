@@ -23,12 +23,6 @@ spec:
     import (
       "encoding/base64"
       "encoding/yaml"
-
-      corev1 "k8s.io/api/core/v1"
-      dockyardsv1 "github.com/sudoswedenab/dockyards-backend/api/v1alpha3"
-      kustomize "sigs.k8s.io/kustomize/api/types"
-      kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
-      sourcev1 "github.com/fluxcd/source-controller/api/v1"
     )
 
     #Input: {
@@ -40,13 +34,60 @@ spec:
       secretAccessKey!: string
       releaseManifest:  string | *"https://github.com/cert-manager/cert-manager/releases/download/v1.16.2/cert-manager.yaml"
     }
-
-    #cluster: dockyardsv1.#Cluster
-
-    #workload: dockyardsv1.#Workload
-    #workload: spec: input: #Input
-
-    _secret: corev1.#Secret & {
+    #cluster: {
+      TYPEMETA.#x
+      metadata?: OBJECTMETA.#x @go(ObjectMeta)
+      spec?: {
+        version?:                  string @go(Version)
+        noDefaultIngressProvider?: bool   @go(NoDefaultIngressProvider)
+        upgrades?: [...{
+          to: string @go(To)
+        }] @go(Upgrades,[]ClusterUpgrade)
+        blockDeletion?:          bool                                @go(BlockDeletion)
+        allocateInternalIP?:     bool                                @go(AllocateInternalIP)
+        ipPoolRef?:              null | TYPEDLOCALOBJECTREFERENCE.#x @go(IPPoolRef,*corev1.TypedLocalObjectReference)
+        duration?:               null | DURATION.#x                  @go(Duration,*metav1.Duration)
+        noDefaultNetworkPlugin?: bool                                @go(NoDefaultNetworkPlugin)
+        podSubnets?: [...string] @go(PodSubnets,[]string)
+        serviceSubnets?: [...string] @go(ServiceSubnets,[]string)
+      } @go(Spec)
+      status?: {
+        conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition)
+        clusterServiceID?: string @go(ClusterServiceID)
+        version?:          string @go(Version)
+        dnsZones?: [...string] @go(DNSZones,[]string)
+        apiEndpoint?: {
+          host: string @go(Host)
+          port: int32  @go(Port)
+        } @go(APIEndpoint)
+        expirationTimestamp?: null | TIME.#x @go(ExpirationTimestamp,*metav1.Time)
+      } @go(Status)
+    }
+    #workload: {
+      TYPEMETA.#x
+      metadata?: OBJECTMETA.#x @go(ObjectMeta)
+      spec?: {
+        clusterComponent?:      bool                           @go(ClusterComponent)
+        targetNamespace:        string                         @go(TargetNamespace)
+        workloadTemplateInput?: null | JSON.#x                 @go(WorkloadTemplateInput,*apiextensionsv1.JSON)
+        input?:                 null | JSON.#x                 @go(Input,*apiextensionsv1.JSON)
+        workloadTemplateRef?:   null | TYPEDOBJECTREFERENCE.#x @go(WorkloadTemplateRef,*corev1.TypedObjectReference)
+        provenience:            string                         @go(Provenience)
+      } @go(Spec)
+      status?: {
+        conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition)
+        dependencyRefs?: [...TYPEDLOCALOBJECTREFERENCE.#x] @go(DependencyRefs,[]corev1.TypedLocalObjectReference)
+        urls?: [...string] @go(URLs,[]string)
+        references?: [...{
+          TYPEDOBJECTREFERENCE.#x
+          parent?: null | TYPEDLOCALOBJECTREFERENCE.#x @go(Parent,*corev1.TypedLocalObjectReference)
+          urls?: [...string] @go(URLs,[]string)
+        }] @go(References,[]WorkloadReference)
+      } @go(Status)
+    } & {
+      spec: input: #Input
+    }
+    _secret: SECRET.#x & {
       apiVersion: "v1"
       kind:       "Secret"
       metadata: name: "route53-credentials"
@@ -55,7 +96,6 @@ spec:
         secretAccessKey: '\(base64.Encode(null, #workload.spec.input.secretAccessKey))'
       }
     }
-
     _clusterIssuer: {
       apiVersion: "cert-manager.io/v1"
       kind:       "ClusterIssuer"
@@ -64,67 +104,56 @@ spec:
         email:  #workload.spec.input.email
         server: #workload.spec.input.server
         privateKeySecretRef: name: "letsencrypt-credentials"
-        solvers: [
-          {
-            selector: dnsZones: #workload.spec.input.dnsZones
-            dns01: route53: {
-              region:       "eu-north-1"
-              hostedZoneID: #workload.spec.input.hostedZoneID
-              accessKeyIDSecretRef: {
-                name: _secret.metadata.name
-                key:  "accessKeyID"
-              }
-              secretAccessKeySecretRef: {
-                name: _secret.metadata.name
-                key:  "secretAccessKey"
-              }
+        solvers: [{
+          selector: dnsZones: #workload.spec.input.dnsZones
+          dns01: route53: {
+            region:       "eu-north-1"
+            hostedZoneID: #workload.spec.input.hostedZoneID
+            accessKeyIDSecretRef: {
+              name: _secret.metadata.name
+              key:  "accessKeyID"
             }
-          },
-        ]
+            secretAccessKeySecretRef: {
+              name: _secret.metadata.name
+              key:  "secretAccessKey"
+            }
+          }
+        }]
       }
     }
-
-    _kustomization: kustomize.#Kustomization & {
-      patches: [
-        {
-          patch: """
-            - op: test
-              path: /spec/template/spec/containers/0/args/2
-              value: --leader-election-namespace=kube-system
-            - op: replace
-              path: /spec/template/spec/containers/0/args/2
-              value: --leader-election-namespace=\(#workload.spec.targetNamespace)
-            """
-          target: {
-            kind:          "Deployment"
-            labelSelector: "app.kubernetes.io/component=controller"
-          }
-        },
-        {
-          patch: """
-            - op: test
-              path: /spec/template/spec/containers/0/args/1
-              value: --leader-election-namespace=kube-system
-            - op: replace
-              path: /spec/template/spec/containers/0/args/1
-              value: --leader-election-namespace=\(#workload.spec.targetNamespace)
-            """
-          target: {
-            kind:          "Deployment"
-            labelSelector: "app.kubernetes.io/component=cainjector"
-          }
-        },
-      ]
-      resources: [
-        #workload.spec.input.releaseManifest,
-        "clusterissuer.yaml",
-        "secret.yaml",
-      ]
+    _kustomization: KUSTOMIZATION.#x & {
+      patches: [{
+        patch: """
+              - op: test
+                path: /spec/template/spec/containers/0/args/2
+                value: --leader-election-namespace=kube-system
+              - op: replace
+                path: /spec/template/spec/containers/0/args/2
+                value: --leader-election-namespace=\(#workload.spec.targetNamespace)
+              """
+        target: {
+          kind:          "Deployment"
+          labelSelector: "app.kubernetes.io/component=controller"
+        }
+      }, {
+        patch: """
+              - op: test
+                path: /spec/template/spec/containers/0/args/1
+                value: --leader-election-namespace=kube-system
+              - op: replace
+                path: /spec/template/spec/containers/0/args/1
+                value: --leader-election-namespace=\(#workload.spec.targetNamespace)
+              """
+        target: {
+          kind:          "Deployment"
+          labelSelector: "app.kubernetes.io/component=cainjector"
+        }
+      }]
+      resources: [#workload.spec.input.releaseManifest, "clusterissuer.yaml", "secret.yaml"]
     }
-
-    worktree: dockyardsv1.#Worktree & {
+    worktree: WORKTREE.#x & {
       apiVersion: "dockyards.io/v1alpha3"
-      kind:       dockyardsv1.#WorktreeKind
+      kind:       WORKTREEKIND.#x
       metadata: {
         name:      #workload.metadata.name
         namespace: #workload.metadata.namespace
@@ -135,10 +164,9 @@ spec:
         "secret.yaml":        '\(yaml.Marshal(_secret))'
       }
     }
-
-    kustomization: kustomizev1.#Kustomization & {
+    kustomization: KUSTOMIZATION_1.#x & {
       apiVersion: "kustomize.toolkit.fluxcd.io/v1"
-      kind:       kustomizev1.#KustomizationKind
+      kind:       KUSTOMIZATIONKIND.#x
       metadata: {
         name:      #workload.metadata.name
         namespace: #workload.metadata.namespace
@@ -149,11 +177,736 @@ spec:
         prune:         true
         retryInterval: "60s"
         sourceRef: {
-          kind: sourcev1.#GitRepositoryKind
+          kind: GITREPOSITORYKIND.#x
           name: worktree.metadata.name
         }
         targetNamespace: #workload.spec.targetNamespace
         wait:            true
       }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#TypeMeta
+    let TYPEMETA = {
+      #x: {
+        kind?:       string @go(Kind) @protobuf(1,bytes,opt)
+        apiVersion?: string @go(APIVersion) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#ObjectMeta
+    let OBJECTMETA = {
+      #x: {
+        name?:                       string  @go(Name) @protobuf(1,bytes,opt)
+        generateName?:               string  @go(GenerateName) @protobuf(2,bytes,opt)
+        namespace?:                  string  @go(Namespace) @protobuf(3,bytes,opt)
+        selfLink?:                   string  @go(SelfLink) @protobuf(4,bytes,opt)
+        uid?:                        UID.#x  @go(UID) @protobuf(5,bytes,opt,casttype=k8s.io/kubernetes/pkg/types.UID)
+        resourceVersion?:            string  @go(ResourceVersion) @protobuf(6,bytes,opt)
+        generation?:                 int64   @go(Generation) @protobuf(7,varint,opt)
+        creationTimestamp?:          TIME.#x @go(CreationTimestamp) @protobuf(8,bytes,opt)
+        deletionTimestamp?:          TIME.#x @go(DeletionTimestamp,*Time) @protobuf(9,bytes,opt)
+        deletionGracePeriodSeconds?: int64   @go(DeletionGracePeriodSeconds,*int64) @protobuf(10,varint,opt)
+        labels?: {
+          [string]: string
+        } @go(Labels,map[string]string) @protobuf(11,bytes,rep)
+        annotations?: {
+          [string]: string
+        } @go(Annotations,map[string]string) @protobuf(12,bytes,rep)
+        ownerReferences?: [...OWNERREFERENCE.#x] @go(OwnerReferences,[]OwnerReference) @protobuf(13,bytes,rep)
+        finalizers?: [...string] @go(Finalizers,[]string) @protobuf(14,bytes,rep)
+        managedFields?: [...MANAGEDFIELDSENTRY.#x] @go(ManagedFields,[]ManagedFieldsEntry) @protobuf(17,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/types".#UID
+    let UID = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#Time
+    let TIME = {
+      #x: _
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#OwnerReference
+    let OWNERREFERENCE = {
+      #x: {
+        apiVersion:          string @go(APIVersion) @protobuf(5,bytes,opt)
+        kind:                string @go(Kind) @protobuf(1,bytes,opt)
+        name:                string @go(Name) @protobuf(3,bytes,opt)
+        uid:                 UID.#x @go(UID) @protobuf(4,bytes,opt,casttype=k8s.io/apimachinery/pkg/types.UID)
+        controller?:         bool   @go(Controller,*bool) @protobuf(6,varint,opt)
+        blockOwnerDeletion?: bool   @go(BlockOwnerDeletion,*bool) @protobuf(7,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#ManagedFieldsEntry
+    let MANAGEDFIELDSENTRY = {
+      #x: {
+        manager?:     string                        @go(Manager) @protobuf(1,bytes,opt)
+        operation?:   MANAGEDFIELDSOPERATIONTYPE.#x @go(Operation) @protobuf(2,bytes,opt,casttype=ManagedFieldsOperationType)
+        apiVersion?:  string                        @go(APIVersion) @protobuf(3,bytes,opt)
+        time?:        TIME.#x                       @go(Time,*Time) @protobuf(4,bytes,opt)
+        fieldsType?:  string                        @go(FieldsType) @protobuf(6,bytes,opt)
+        fieldsV1?:    FIELDSV1.#x                   @go(FieldsV1,*FieldsV1) @protobuf(7,bytes,opt)
+        subresource?: string                        @go(Subresource) @protobuf(8,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#ManagedFieldsOperationType
+    let MANAGEDFIELDSOPERATIONTYPE = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#FieldsV1
+    let FIELDSV1 = {
+      #x: _
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#TypedLocalObjectReference
+    let TYPEDLOCALOBJECTREFERENCE = {
+      #x: {
+        apiGroup?: null | string @go(APIGroup,*string) @protobuf(1,bytes,opt)
+        kind:      string        @go(Kind) @protobuf(2,bytes,opt)
+        name:      string        @go(Name) @protobuf(3,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#Duration
+    let DURATION = {
+      #x: _
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#Condition
+    let CONDITION = {
+      #x: {
+        type:                string             @go(Type) @protobuf(1,bytes,opt)
+        status:              CONDITIONSTATUS.#x @go(Status) @protobuf(2,bytes,opt)
+        observedGeneration?: int64              @go(ObservedGeneration) @protobuf(3,varint,opt)
+        lastTransitionTime:  TIME.#x            @go(LastTransitionTime) @protobuf(4,bytes,opt)
+        reason:              string             @go(Reason) @protobuf(5,bytes,opt)
+        message:             string             @go(Message) @protobuf(6,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#ConditionStatus
+    let CONDITIONSTATUS = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1".#JSON
+    let JSON = {
+      #x: _
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#TypedObjectReference
+    let TYPEDOBJECTREFERENCE = {
+      #x: {
+        apiGroup?:  null | string @go(APIGroup,*string) @protobuf(1,bytes,opt)
+        kind:       string        @go(Kind) @protobuf(2,bytes,opt)
+        name:       string        @go(Name) @protobuf(3,bytes,opt)
+        namespace?: null | string @go(Namespace,*string) @protobuf(4,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#Secret
+    let SECRET = {
+      #x: {
+        TYPEMETA.#x
+        metadata?:  OBJECTMETA.#x @go(ObjectMeta) @protobuf(1,bytes,opt)
+        immutable?: null | bool   @go(Immutable,*bool) @protobuf(5,varint,opt)
+        data?: {
+          [string]: bytes
+        } @go(Data,map[string][]byte) @protobuf(2,bytes,rep)
+        stringData?: {
+          [string]: string
+        } @go(StringData,map[string]string) @protobuf(4,bytes,rep)
+        type?: SECRETTYPE.#x @go(Type) @protobuf(3,bytes,opt,casttype=SecretType)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#SecretType
+    let SECRETTYPE = {
+      #x: string
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#Kustomization
+    let KUSTOMIZATION = {
+      #x: {
+        TYPEMETA_1.#x
+        metadata?: null | OBJECTMETA_1.#x @go(MetaData,*ObjectMeta)
+        openapi?: {
+          [string]: string
+        } @go(OpenAPI,map[string]string)
+        namePrefix?: string @go(NamePrefix)
+        nameSuffix?: string @go(NameSuffix)
+        namespace?:  string @go(Namespace)
+        commonLabels?: {
+          [string]: string
+        } @go(CommonLabels,map[string]string)
+        labels?: [...LABEL.#x] @go(Labels,[]Label)
+        commonAnnotations?: {
+          [string]: string
+        } @go(CommonAnnotations,map[string]string)
+        patchesStrategicMerge?: [...PATCHSTRATEGICMERGE.#x] @go(PatchesStrategicMerge,[]PatchStrategicMerge)
+        patchesJson6902?: [...PATCH.#x] @go(PatchesJson6902,[]Patch)
+        patches?: [...PATCH.#x] @go(Patches,[]Patch)
+        images?: [...IMAGE.#x] @go(Images,[]Image)
+        imageTags?: [...IMAGE.#x] @go(ImageTags,[]Image)
+        replacements?: [...REPLACEMENTFIELD.#x] @go(Replacements,[]ReplacementField)
+        replicas?: [...REPLICA.#x] @go(Replicas,[]Replica)
+        vars?: [...VAR.#x] @go(Vars,[]Var)
+        sortOptions?: null | SORTOPTIONS.#x @go(SortOptions,*SortOptions)
+        resources?: [...string] @go(Resources,[]string)
+        components?: [...string] @go(Components,[]string)
+        crds?: [...string] @go(Crds,[]string)
+        bases?: [...string] @go(Bases,[]string)
+        configMapGenerator?: [...CONFIGMAPARGS.#x] @go(ConfigMapGenerator,[]ConfigMapArgs)
+        secretGenerator?: [...SECRETARGS.#x] @go(SecretGenerator,[]SecretArgs)
+        helmGlobals?: null | HELMGLOBALS.#x @go(HelmGlobals,*HelmGlobals)
+        helmCharts?: [...HELMCHART.#x] @go(HelmCharts,[]HelmChart)
+        helmChartInflationGenerator?: [...HELMCHARTARGS.#x] @go(HelmChartInflationGenerator,[]HelmChartArgs)
+        generatorOptions?: null | GENERATOROPTIONS.#x @go(GeneratorOptions,*GeneratorOptions)
+        configurations?: [...string] @go(Configurations,[]string)
+        generators?: [...string] @go(Generators,[]string)
+        transformers?: [...string] @go(Transformers,[]string)
+        validators?: [...string] @go(Validators,[]string)
+        buildMetadata?: [...string] @go(BuildMetadata,[]string)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#TypeMeta
+    let TYPEMETA_1 = {
+      #x: {
+        kind?:       string @go(Kind)
+        apiVersion?: string @go(APIVersion)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#ObjectMeta
+    let OBJECTMETA_1 = {
+      #x: {
+        name?:      string @go(Name)
+        namespace?: string @go(Namespace)
+        labels?: {
+          [string]: string
+        } @go(Labels,map[string]string)
+        annotations?: {
+          [string]: string
+        } @go(Annotations,map[string]string)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#Label
+    let LABEL = {
+      #x: {
+        pairs?: {
+          [string]: string
+        } @go(Pairs,map[string]string)
+        includeSelectors?: bool @go(IncludeSelectors)
+        includeTemplates?: bool @go(IncludeTemplates)
+        fields?: [...FIELDSPEC.#x] @go(FieldSpecs,[]FieldSpec)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#FieldSpec
+    let FIELDSPEC = {
+      #x: {
+        GVK.#x
+        path?:   string @go(Path)
+        create?: bool   @go(CreateIfNotPresent)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/kyaml/resid".#Gvk
+    let GVK = {
+      #x: {
+        group?:   string @go(Group)
+        version?: string @go(Version)
+        kind?:    string @go(Kind)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#PatchStrategicMerge
+    let PATCHSTRATEGICMERGE = {
+      #x: string
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#Patch
+    let PATCH = {
+      #x: {
+        path?:   string             @go(Path)
+        patch?:  string             @go(Patch)
+        target?: null | SELECTOR.#x @go(Target,*Selector)
+        options?: {
+          [string]: bool
+        } @go(Options,map[string]bool)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#Selector
+    let SELECTOR = {
+      #x: {
+        RESID.#x
+        annotationSelector?: string @go(AnnotationSelector)
+        labelSelector?:      string @go(LabelSelector)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/kyaml/resid".#ResId
+    let RESID = {
+      #x: {
+        GVK.#x
+        name?:      string @go(Name)
+        namespace?: string @go(Namespace)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#Image
+    let IMAGE = {
+      #x: {
+        name?:      string @go(Name)
+        newName?:   string @go(NewName)
+        tagSuffix?: string @go(TagSuffix)
+        newTag?:    string @go(NewTag)
+        digest?:    string @go(Digest)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#ReplacementField
+    let REPLACEMENTFIELD = {
+      #x: {
+        REPLACEMENT.#x
+        path?: string @go(Path)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#Replacement
+    let REPLACEMENT = {
+      #x: {
+        source?: null | SOURCESELECTOR.#x @go(Source,*SourceSelector)
+        targets?: [...null | TARGETSELECTOR.#x] @go(Targets,[]*TargetSelector)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#SourceSelector
+    let SOURCESELECTOR = {
+      #x: {
+        RESID.#x
+        fieldPath?: string                 @go(FieldPath)
+        options?:   null | FIELDOPTIONS.#x @go(Options,*FieldOptions)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#FieldOptions
+    let FIELDOPTIONS = {
+      #x: {
+        delimiter?: string @go(Delimiter)
+        index?:     int    @go(Index)
+        encoding?:  string @go(Encoding)
+        create?:    bool   @go(Create)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#TargetSelector
+    let TARGETSELECTOR = {
+      #x: {
+        select?: null | SELECTOR.#x @go(Select,*Selector)
+        reject?: [...null | SELECTOR.#x] @go(Reject,[]*Selector)
+        fieldPaths?: [...string] @go(FieldPaths,[]string)
+        options?: null | FIELDOPTIONS.#x @go(Options,*FieldOptions)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#Replica
+    let REPLICA = {
+      #x: {
+        name?: string @go(Name)
+        count: int64  @go(Count)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#Var
+    let VAR = {
+      #x: {
+        name:      string           @go(Name)
+        objref:    TARGET.#x        @go(ObjRef)
+        fieldref?: FIELDSELECTOR.#x @go(FieldRef)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#Target
+    let TARGET = {
+      #x: {
+        GVK.#x
+        apiVersion?: string @go(APIVersion)
+        name:        string @go(Name)
+        namespace?:  string @go(Namespace)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#FieldSelector
+    let FIELDSELECTOR = {
+      #x: {
+        fieldPath?: string @go(FieldPath)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#SortOptions
+    let SORTOPTIONS = {
+      #x: {
+        order?:             SORTORDER.#x                @go(Order)
+        legacySortOptions?: null | LEGACYSORTOPTIONS.#x @go(LegacySortOptions,*LegacySortOptions)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#SortOrder
+    let SORTORDER = {
+      #x: string
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#LegacySortOptions
+    let LEGACYSORTOPTIONS = {
+      #x: {
+        orderFirst: [...string] @go(OrderFirst,[]string)
+        orderLast: [...string] @go(OrderLast,[]string)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#ConfigMapArgs
+    let CONFIGMAPARGS = {
+      #x: GENERATORARGS.#x
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#GeneratorArgs
+    let GENERATORARGS = {
+      #x: {
+        KVPAIRSOURCES.#x
+        namespace?: string                     @go(Namespace)
+        name?:      string                     @go(Name)
+        behavior?:  string                     @go(Behavior)
+        options?:   null | GENERATOROPTIONS.#x @go(Options,*GeneratorOptions)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#KvPairSources
+    let KVPAIRSOURCES = {
+      #x: {
+        literals?: [...string] @go(LiteralSources,[]string)
+        files?: [...string] @go(FileSources,[]string)
+        envs?: [...string] @go(EnvSources,[]string)
+        env?: string @go(EnvSource)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#GeneratorOptions
+    let GENERATOROPTIONS = {
+      #x: {
+        labels?: {
+          [string]: string
+        } @go(Labels,map[string]string)
+        annotations?: {
+          [string]: string
+        } @go(Annotations,map[string]string)
+        disableNameSuffixHash?: bool @go(DisableNameSuffixHash)
+        immutable?:             bool @go(Immutable)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#SecretArgs
+    let SECRETARGS = {
+      #x: {
+        GENERATORARGS.#x
+        type?: string @go(Type)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#HelmGlobals
+    let HELMGLOBALS = {
+      #x: {
+        chartHome?:  string @go(ChartHome)
+        configHome?: string @go(ConfigHome)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#HelmChart
+    let HELMCHART = {
+      #x: {
+        name?:        string @go(Name)
+        version?:     string @go(Version)
+        repo?:        string @go(Repo)
+        releaseName?: string @go(ReleaseName)
+        namespace?:   string @go(Namespace)
+        additionalValuesFiles?: [...string] @go(AdditionalValuesFiles,[]string)
+        valuesFile?: string @go(ValuesFile)
+        valuesInline?: {
+          ...
+        } @go(ValuesInline,map[string]interface{})
+        valuesMerge?: string @go(ValuesMerge)
+        includeCRDs?: bool   @go(IncludeCRDs)
+        skipHooks?:   bool   @go(SkipHooks)
+        apiVersions?: [...string] @go(ApiVersions,[]string)
+        kubeVersion?:  string @go(KubeVersion)
+        nameTemplate?: string @go(NameTemplate)
+        skipTests?:    bool   @go(SkipTests)
+      }
+    }
+
+    //cue:path: "sigs.k8s.io/kustomize/api/types".#HelmChartArgs
+    let HELMCHARTARGS = {
+      #x: {
+        chartName?:     string @go(ChartName)
+        chartVersion?:  string @go(ChartVersion)
+        chartRepoUrl?:  string @go(ChartRepoURL)
+        chartHome?:     string @go(ChartHome)
+        chartRepoName?: string @go(ChartRepoName)
+        helmBin?:       string @go(HelmBin)
+        helmHome?:      string @go(HelmHome)
+        values?:        string @go(Values)
+        valuesLocal?: {
+          ...
+        } @go(ValuesLocal,map[string]interface{})
+        valuesMerge?:      string @go(ValuesMerge)
+        releaseName?:      string @go(ReleaseName)
+        releaseNamespace?: string @go(ReleaseNamespace)
+        extraArgs?: [...string] @go(ExtraArgs,[]string)
+      }
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#Worktree
+    let WORKTREE = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x     @go(ObjectMeta)
+        spec?:     WORKTREESPEC.#x   @go(Spec)
+        status?:   WORKTREESTATUS.#x @go(Status)
+      }
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#WorktreeSpec
+    let WORKTREESPEC = {
+      #x: {
+        files?: {
+          [string]: bytes
+        } @go(Files,map[string][]byte)
+      }
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#WorktreeStatus
+    let WORKTREESTATUS = {
+      #x: {
+        conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition)
+        url?:           null | string @go(URL,*string)
+        referenceName?: null | string @go(ReferenceName,*string)
+        commitHash?:    null | string @go(CommitHash,*string)
+      }
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#WorktreeKind
+    let WORKTREEKIND = {
+      #x: "Worktree"
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#Kustomization
+    let KUSTOMIZATION_1 = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x          @go(ObjectMeta)
+        spec?:     KUSTOMIZATIONSPEC.#x   @go(Spec)
+        status?:   KUSTOMIZATIONSTATUS.#x @go(Status)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#KustomizationSpec
+    let KUSTOMIZATIONSPEC = {
+      #x: {
+        commonMetadata?: null | COMMONMETADATA.#x @go(CommonMetadata,*CommonMetadata)
+        dependsOn?: [...NAMESPACEDOBJECTREFERENCE.#x] @go(DependsOn,[]meta.NamespacedObjectReference)
+        decryption?:    null | DECRYPTION.#x          @go(Decryption,*Decryption)
+        interval:       DURATION.#x                   @go(Interval)
+        retryInterval?: null | DURATION.#x            @go(RetryInterval,*metav1.Duration)
+        kubeConfig?:    null | KUBECONFIGREFERENCE.#x @go(KubeConfig,*meta.KubeConfigReference)
+        path?:          string                        @go(Path)
+        postBuild?:     null | POSTBUILD.#x           @go(PostBuild,*PostBuild)
+        prune:          bool                          @go(Prune)
+        healthChecks?: [...NAMESPACEDOBJECTKINDREFERENCE.#x] @go(HealthChecks,[]meta.NamespacedObjectKindReference)
+        namePrefix?: string @go(NamePrefix)
+        nameSuffix?: string @go(NameSuffix)
+        patches?: [...PATCH_1.#x] @go(Patches,[]kustomize.Patch)
+        images?: [...IMAGE_1.#x] @go(Images,[]kustomize.Image)
+        serviceAccountName?: string                           @go(ServiceAccountName)
+        sourceRef:           CROSSNAMESPACESOURCEREFERENCE.#x @go(SourceRef)
+        suspend?:            bool                             @go(Suspend)
+        targetNamespace?:    string                           @go(TargetNamespace)
+        timeout?:            null | DURATION.#x               @go(Timeout,*metav1.Duration)
+        force?:              bool                             @go(Force)
+        wait?:               bool                             @go(Wait)
+        components?: [...string] @go(Components,[]string)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#CommonMetadata
+    let COMMONMETADATA = {
+      #x: {
+        annotations?: {
+          [string]: string
+        } @go(Annotations,map[string]string)
+        labels?: {
+          [string]: string
+        } @go(Labels,map[string]string)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#NamespacedObjectReference
+    let NAMESPACEDOBJECTREFERENCE = {
+      #x: {
+        name:       string @go(Name)
+        namespace?: string @go(Namespace)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#Decryption
+    let DECRYPTION = {
+      #x: {
+        provider:   string                         @go(Provider)
+        secretRef?: null | LOCALOBJECTREFERENCE.#x @go(SecretRef,*meta.LocalObjectReference)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#LocalObjectReference
+    let LOCALOBJECTREFERENCE = {
+      #x: {
+        name: string @go(Name)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#KubeConfigReference
+    let KUBECONFIGREFERENCE = {
+      #x: {
+        configMapRef?: null | LOCALOBJECTREFERENCE.#x @go(ConfigMapRef,*LocalObjectReference)
+        secretRef?:    null | SECRETKEYREFERENCE.#x   @go(SecretRef,*SecretKeyReference)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#SecretKeyReference
+    let SECRETKEYREFERENCE = {
+      #x: {
+        name: string @go(Name)
+        key?: string @go(Key)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#PostBuild
+    let POSTBUILD = {
+      #x: {
+        substitute?: {
+          [string]: string
+        } @go(Substitute,map[string]string)
+        substituteFrom?: [...SUBSTITUTEREFERENCE.#x] @go(SubstituteFrom,[]SubstituteReference)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#SubstituteReference
+    let SUBSTITUTEREFERENCE = {
+      #x: {
+        kind:      string @go(Kind)
+        name:      string @go(Name)
+        optional?: bool   @go(Optional)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#NamespacedObjectKindReference
+    let NAMESPACEDOBJECTKINDREFERENCE = {
+      #x: {
+        apiVersion?: string @go(APIVersion)
+        kind:        string @go(Kind)
+        name:        string @go(Name)
+        namespace?:  string @go(Namespace)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/kustomize".#Patch
+    let PATCH_1 = {
+      #x: {
+        patch:   string               @go(Patch)
+        target?: null | SELECTOR_1.#x @go(Target,*Selector)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/kustomize".#Selector
+    let SELECTOR_1 = {
+      #x: {
+        group?:              string @go(Group)
+        version?:            string @go(Version)
+        kind?:               string @go(Kind)
+        namespace?:          string @go(Namespace)
+        name?:               string @go(Name)
+        annotationSelector?: string @go(AnnotationSelector)
+        labelSelector?:      string @go(LabelSelector)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/kustomize".#Image
+    let IMAGE_1 = {
+      #x: {
+        name:     string @go(Name)
+        newName?: string @go(NewName)
+        newTag?:  string @go(NewTag)
+        digest?:  string @go(Digest)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#CrossNamespaceSourceReference
+    let CROSSNAMESPACESOURCEREFERENCE = {
+      #x: {
+        apiVersion?: string @go(APIVersion)
+        kind:        string @go(Kind)
+        name:        string @go(Name)
+        namespace?:  string @go(Namespace)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#KustomizationStatus
+    let KUSTOMIZATIONSTATUS = {
+      #x: {
+        RECONCILEREQUESTSTATUS.#x
+        observedGeneration?: int64 @go(ObservedGeneration)
+        conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition)
+        lastAppliedRevision?:   string                      @go(LastAppliedRevision)
+        lastAttemptedRevision?: string                      @go(LastAttemptedRevision)
+        inventory?:             null | RESOURCEINVENTORY.#x @go(Inventory,*ResourceInventory)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#ReconcileRequestStatus
+    let RECONCILEREQUESTSTATUS = {
+      #x: {
+        lastHandledReconcileAt?: string @go(LastHandledReconcileAt)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#ResourceInventory
+    let RESOURCEINVENTORY = {
+      #x: {
+        entries: [...RESOURCEREF.#x] @go(Entries,[]ResourceRef)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#ResourceRef
+    let RESOURCEREF = {
+      #x: {
+        id: string @go(ID)
+        v:  string @go(Version)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#KustomizationKind
+    let KUSTOMIZATIONKIND = {
+      #x: "Kustomization"
+    }
+
+    //cue:path: "github.com/fluxcd/source-controller/api/v1".#GitRepositoryKind
+    let GITREPOSITORYKIND = {
+      #x: "GitRepository"
     }
   type: dockyards.io/cue

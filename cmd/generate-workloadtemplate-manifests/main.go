@@ -22,7 +22,11 @@ import (
 	"regexp"
 	"strings"
 
+	"cuelang.org/go/cue"
+	"cuelang.org/go/cue/cuecontext"
 	"cuelang.org/go/cue/format"
+	"cuelang.org/go/cue/load"
+
 	"cuelang.org/go/cue/parser"
 	"github.com/spf13/pflag"
 	dockyardsv1 "github.com/sudoswedenab/dockyards-backend/api/v1alpha3"
@@ -38,6 +42,7 @@ type generator struct {
 }
 
 var re *regexp.Regexp
+var templatePath string
 
 func (g *generator) walkDir(path string, dirEntry fs.DirEntry, err error) error {
 	if err != nil {
@@ -58,14 +63,45 @@ func (g *generator) walkDir(path string, dirEntry fs.DirEntry, err error) error 
 
 	fmt.Println(base, name)
 
-	file, err := parser.ParseFile(path, nil)
+	file, err := parser.ParseFile(path, nil, parser.AllErrors, parser.DeclarationErrors, parser.ParseComments)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not parse file '%s': %w", path, err)
 	}
 
-	b, err := format.Node(file, format.TabIndent(false), format.UseSpaces(2), format.Simplify())
+	if templatePath == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("could not get cwd: %w", err)
+		}
+		templatePath = filepath.Join(cwd, "template.cue")
+	}
+
+	cuectx := cuecontext.New()
+
+	instances := load.Instances([]string{}, &load.Config{
+		Package: "template",
+		Overlay: map[string]load.Source{
+			templatePath: load.FromFile(file),
+		},
+	})
+
+	if len(instances) != 1 {
+		return fmt.Errorf("expected values to be of length 1, but found %d", len(instances))
+	}
+
+	instance := instances[0]
+
+	value := cuectx.BuildInstance(instance)
+	err = value.Err()
 	if err != nil {
-		return err
+		return fmt.Errorf("could not build instances for file '%s': %w", path, err)
+	}
+
+	syntaxTree := value.Syntax(cue.InlineImports(true))
+
+	b, err := format.Node(syntaxTree, format.TabIndent(false), format.UseSpaces(2), format.Simplify())
+	if err != nil {
+		return fmt.Errorf("could not format node: %w", err)
 	}
 
 	gvk := schema.GroupVersionKind{

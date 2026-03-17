@@ -23,23 +23,14 @@ spec:
     import (
       "encoding/yaml"
       "strings"
-
-      corev1 "k8s.io/api/core/v1"
-      dockyardsv1 "github.com/sudoswedenab/dockyards-backend/api/v1alpha3"
-      helmv2 "github.com/fluxcd/helm-controller/api/v2"
-      sourcev1 "github.com/fluxcd/source-controller/api/v1"
-      kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
-      kafkav1 "github.com/RedHatInsights/strimzi-client-go/apis/kafka.strimzi.io/v1beta2"
-      monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
     )
 
-    #Odd:             num=1 + 2*(div(num, 2))
+    #Odd:             num_1=1 + 2*div(num_1, 2)
     #StorageType:     "ephemeral" | "persistent-claim"
     #StorageClass:    "cephfs" | "rbd"
-    #CpuQuantity:     string & =~"^([0-9]+(\\.[0-9]+)?)(m)?$"
-    #MemoryQuantity:  string & =~"^([0-9]+(\\.[0-9]+)?)(Ki|Mi|Gi|Ti|Pi|Ei)?$"
-    #StorageQuantity: string & =~"^([0-9]+(\\.[0-9]+)?)(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$"
-
+    #CpuQuantity:     =~"^([0-9]+(\\.[0-9]+)?)(m)?$"
+    #MemoryQuantity:  =~"^([0-9]+(\\.[0-9]+)?)(Ki|Mi|Gi|Ti|Pi|Ei)?$"
+    #StorageQuantity: =~"^([0-9]+(\\.[0-9]+)?)(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$"
     #Input: {
       domain: string
       operator: {
@@ -86,7 +77,7 @@ spec:
         }
       }
       controller: {
-        nodePoolSize: int & >0 & #Odd | *3
+        nodePoolSize: int & #Odd_1 & >0 | *3
         resources: {
           requests: {
             memory: #MemoryQuantity | *"512Mi"
@@ -105,13 +96,60 @@ spec:
         }
       }
     }
-
-    #cluster: dockyardsv1.#Cluster
-
-    #workload: dockyardsv1.#Workload
-    #workload: spec: input: #Input
-
-    _namespace: corev1.#Namespace & {
+    #cluster: {
+      TYPEMETA.#x
+      metadata?: OBJECTMETA.#x @go(ObjectMeta)
+      spec?: {
+        version?:                  string @go(Version)
+        noDefaultIngressProvider?: bool   @go(NoDefaultIngressProvider)
+        upgrades?: [...{
+          to: string @go(To)
+        }] @go(Upgrades,[]ClusterUpgrade)
+        blockDeletion?:          bool                                @go(BlockDeletion)
+        allocateInternalIP?:     bool                                @go(AllocateInternalIP)
+        ipPoolRef?:              null | TYPEDLOCALOBJECTREFERENCE.#x @go(IPPoolRef,*corev1.TypedLocalObjectReference)
+        duration?:               null | DURATION.#x                  @go(Duration,*metav1.Duration)
+        noDefaultNetworkPlugin?: bool                                @go(NoDefaultNetworkPlugin)
+        podSubnets?: [...string] @go(PodSubnets,[]string)
+        serviceSubnets?: [...string] @go(ServiceSubnets,[]string)
+      } @go(Spec)
+      status?: {
+        conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition)
+        clusterServiceID?: string @go(ClusterServiceID)
+        version?:          string @go(Version)
+        dnsZones?: [...string] @go(DNSZones,[]string)
+        apiEndpoint?: {
+          host: string @go(Host)
+          port: int32  @go(Port)
+        } @go(APIEndpoint)
+        expirationTimestamp?: null | TIME.#x @go(ExpirationTimestamp,*metav1.Time)
+      } @go(Status)
+    }
+    #workload: {
+      TYPEMETA.#x
+      metadata?: OBJECTMETA.#x @go(ObjectMeta)
+      spec?: {
+        clusterComponent?:      bool                           @go(ClusterComponent)
+        targetNamespace:        string                         @go(TargetNamespace)
+        workloadTemplateInput?: null | JSON.#x                 @go(WorkloadTemplateInput,*apiextensionsv1.JSON)
+        input?:                 null | JSON.#x                 @go(Input,*apiextensionsv1.JSON)
+        workloadTemplateRef?:   null | TYPEDOBJECTREFERENCE.#x @go(WorkloadTemplateRef,*corev1.TypedObjectReference)
+        provenience:            string                         @go(Provenience)
+      } @go(Spec)
+      status?: {
+        conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition)
+        dependencyRefs?: [...TYPEDLOCALOBJECTREFERENCE.#x] @go(DependencyRefs,[]corev1.TypedLocalObjectReference)
+        urls?: [...string] @go(URLs,[]string)
+        references?: [...{
+          TYPEDOBJECTREFERENCE.#x
+          parent?: null | TYPEDLOCALOBJECTREFERENCE.#x @go(Parent,*corev1.TypedLocalObjectReference)
+          urls?: [...string] @go(URLs,[]string)
+        }] @go(References,[]WorkloadReference)
+      } @go(Status)
+    } & {
+      spec: input: #Input
+    }
+    _namespace: NAMESPACE.#x & {
       apiVersion: "v1"
       kind:       "Namespace"
       metadata: {
@@ -122,10 +160,9 @@ spec:
         }
       }
     }
-
-    worktree: dockyardsv1.#Worktree & {
+    worktree: WORKTREE.#x & {
       apiVersion: "dockyards.io/v1alpha3"
-      kind:       dockyardsv1.#WorktreeKind
+      kind:       WORKTREEKIND.#x
       metadata: {
         name:      #workload.metadata.name
         namespace: #workload.metadata.namespace
@@ -143,10 +180,9 @@ spec:
         }
       }
     }
-
-    kustomization: kustomizev1.#Kustomization & {
+    kustomization: KUSTOMIZATION.#x & {
       apiVersion: "kustomize.toolkit.fluxcd.io/v1"
-      kind:       kustomizev1.#KustomizationKind
+      kind:       KUSTOMIZATIONKIND.#x
       metadata: {
         name:      #workload.metadata.name
         namespace: #workload.metadata.namespace
@@ -156,15 +192,14 @@ spec:
         kubeConfig: secretRef: name: #cluster.metadata.name + "-kubeconfig"
         prune: true
         sourceRef: {
-          kind: sourcev1.#GitRepositoryKind
+          kind: GITREPOSITORYKIND.#x
           name: #workload.metadata.name
         }
       }
     }
-
-    helmRepository: sourcev1.#HelmRepository & {
+    helmRepository: HELMREPOSITORY.#x & {
       apiVersion: "source.toolkit.fluxcd.io/v1"
-      kind:       sourcev1.#HelmRepositoryKind
+      kind:       HELMREPOSITORYKIND.#x
       metadata: {
         name:      #workload.metadata.name
         namespace: #workload.metadata.namespace
@@ -177,10 +212,9 @@ spec:
         }
       }
     }
-
-    helmRelease: helmv2.#HelmRelease & {
+    helmRelease: HELMRELEASE.#x & {
       apiVersion: "helm.toolkit.fluxcd.io/v2"
-      kind:       helmv2.#HelmReleaseKind
+      kind:       HELMRELEASEKIND.#x
       metadata: {
         name:      #workload.metadata.name
         namespace: #workload.metadata.namespace
@@ -201,8 +235,7 @@ spec:
         targetNamespace:  #workload.spec.targetNamespace
       }
     }
-
-    _kafkaControllerNodePool: kafkav1.#KafkaNodePool & {
+    _kafkaControllerNodePool: KAFKANODEPOOL.#x & {
       apiVersion: "kafka.strimzi.io/v1beta2"
       kind:       "KafkaNodePool"
       metadata: {
@@ -212,9 +245,7 @@ spec:
       }
       spec: {
         replicas: #workload.spec.input.controller.nodePoolSize
-        roles: [
-          "controller",
-        ]
+        roles: ["controller"]
         resources: {
           requests: {
             memory: #workload.spec.input.controller.resources.requests.memory
@@ -227,26 +258,23 @@ spec:
         }
         storage: {
           type: "jbod"
-          volumes: [
-            {
-              id:            0
-              type:          #workload.spec.input.controller.resources.storage.type
-              kraftMetadata: "shared"
-              if #workload.spec.input.controller.resources.storage.type == "ephemeral" {
-                sizeLimit: #workload.spec.input.controller.resources.storage.size
-              }
-              if #workload.spec.input.controller.resources.storage.type == "persistent-claim" {
-                size:        #workload.spec.input.controller.resources.storage.size
-                class:       #workload.spec.input.controller.resources.storage.class
-                deleteClaim: #workload.spec.input.controller.resources.storage.deleteClaim
-              }
-            },
-          ]
+          volumes: [{
+            id:            0
+            type:          #workload.spec.input.controller.resources.storage.type
+            kraftMetadata: "shared"
+            if #workload.spec.input.controller.resources.storage.type == "ephemeral" {
+              sizeLimit: #workload.spec.input.controller.resources.storage.size
+            }
+            if #workload.spec.input.controller.resources.storage.type == "persistent-claim" {
+              size:        #workload.spec.input.controller.resources.storage.size
+              class:       #workload.spec.input.controller.resources.storage.class
+              deleteClaim: #workload.spec.input.controller.resources.storage.deleteClaim
+            }
+          }]
         }
       }
     }
-
-    _kafkaBrokerNodePool: kafkav1.#KafkaNodePool & {
+    _kafkaBrokerNodePool: KAFKANODEPOOL.#x & {
       apiVersion: "kafka.strimzi.io/v1beta2"
       kind:       "KafkaNodePool"
       metadata: {
@@ -256,9 +284,7 @@ spec:
       }
       spec: {
         replicas: #workload.spec.input.broker.nodePoolSize
-        roles: [
-          "broker",
-        ]
+        roles: ["broker"]
         resources: {
           requests: {
             memory: #workload.spec.input.broker.resources.requests.memory
@@ -271,33 +297,29 @@ spec:
         }
         storage: {
           type: "jbod"
-          volumes: [
-            {
-              id:            0
-              type:          #workload.spec.input.broker.resources.storage.type
-              kraftMetadata: "shared"
-              if #workload.spec.input.broker.resources.storage.type == "ephemeral" {
-                sizeLimit: #workload.spec.input.broker.resources.storage.size
-              }
-              if #workload.spec.input.broker.resources.storage.type == "persistent-claim" {
-                size:        #workload.spec.input.broker.resources.storage.size
-                class:       #workload.spec.input.broker.resources.storage.class
-                deleteClaim: #workload.spec.input.broker.resources.storage.deleteClaim
-              }
-            },
-          ]
+          volumes: [{
+            id:            0
+            type:          #workload.spec.input.broker.resources.storage.type
+            kraftMetadata: "shared"
+            if #workload.spec.input.broker.resources.storage.type == "ephemeral" {
+              sizeLimit: #workload.spec.input.broker.resources.storage.size
+            }
+            if #workload.spec.input.broker.resources.storage.type == "persistent-claim" {
+              size:        #workload.spec.input.broker.resources.storage.size
+              class:       #workload.spec.input.broker.resources.storage.class
+              deleteClaim: #workload.spec.input.broker.resources.storage.deleteClaim
+            }
+          }]
         }
       }
     }
-
-    _kafkaCluster: kafkav1.#Kafka & {
+    _kafkaCluster: KAFKA.#x & {
       apiVersion: "kafka.strimzi.io/v1beta2"
       kind:       "Kafka"
       metadata: {
         name:      #workload.spec.input.cluster.name
         namespace: #workload.spec.targetNamespace
-        annotations:
-        {
+        annotations: {
           "strimzi.io/node-pools": "enabled"
           "strimzi.io/kraft":      "enabled"
         }
@@ -332,8 +354,7 @@ spec:
                 hostTemplate: "broker-{nodeId}." + #workload.spec.targetNamespace + #workload.spec.input.domain
                 bootstrap: host: "bootstrap." + #workload.spec.targetNamespace + #workload.spec.input.domain
               }
-            },
-          ]
+            }]
           config: {
             "offsets.topic.replication.factor":         #workload.spec.input.kafka.offsetsTopicReplicationFactor
             "transaction.state.log.replication.factor": #workload.spec.input.kafka.transactionStateLogReplicationFactor
@@ -369,8 +390,7 @@ spec:
         }
       }
     }
-
-    _kafkaMetricsConfig: corev1.#ConfigMap & {
+    _kafkaMetricsConfig: CONFIGMAP.#x & {
       apiVersion: "v1"
       kind:       "ConfigMap"
       metadata: {
@@ -381,159 +401,157 @@ spec:
           app:                  "strimzi"
         }
       }
-      data: "kafka-metrics-config.yaml":
+      data: "kafka-metrics-config.yaml": """
+        lowercaseOutputName: true
+        rules:
+        - pattern: kafka.server<type=(.+), name=(.+), clientId=(.+), topic=(.+), partition=(.*)><>Value
+          name: kafka_server_$1_$2
+          type: GAUGE
+          labels:
+            clientId: "$3"
+            topic: "$4"
+            partition: "$5"
+        - pattern: kafka.server<type=(.+), name=(.+), clientId=(.+), brokerHost=(.+), brokerPort=(.+)><>Value
+          name: kafka_server_$1_$2
+          type: GAUGE
+          labels:
+            clientId: "$3"
+            broker: "$4:$5"
+        - pattern: kafka.server<type=(.+), cipher=(.+), protocol=(.+), listener=(.+), networkProcessor=(.+)><>connections
+          name: kafka_server_$1_connections_tls_info
+          type: GAUGE
+          labels:
+            cipher: "$2"
+            protocol: "$3"
+            listener: "$4"
+            networkProcessor: "$5"
+        - pattern: kafka.server<type=(.+), clientSoftwareName=(.+), clientSoftwareVersion=(.+), listener=(.+), networkProcessor=(.+)><>connections
+          name: kafka_server_$1_connections_software
+          type: GAUGE
+          labels:
+            clientSoftwareName: "$2"
+            clientSoftwareVersion: "$3"
+            listener: "$4"
+            networkProcessor: "$5"
+        - pattern: "kafka.server<type=(.+), listener=(.+), networkProcessor=(.+)><>(.+-total):"
+          name: kafka_server_$1_$4
+          type: COUNTER
+          labels:
+            listener: "$2"
+            networkProcessor: "$3"
+        - pattern: "kafka.server<type=(.+), listener=(.+), networkProcessor=(.+)><>(.+):"
+          name: kafka_server_$1_$4
+          type: GAUGE
+          labels:
+            listener: "$2"
+            networkProcessor: "$3"
+        - pattern: kafka.server<type=(.+), listener=(.+), networkProcessor=(.+)><>(.+-total)
+          name: kafka_server_$1_$4
+          type: COUNTER
+          labels:
+            listener: "$2"
+            networkProcessor: "$3"
+        - pattern: kafka.server<type=(.+), listener=(.+), networkProcessor=(.+)><>(.+)
+          name: kafka_server_$1_$4
+          type: GAUGE
+          labels:
+            listener: "$2"
+            networkProcessor: "$3"
+        - pattern: kafka.(\\w+)<type=(.+), name=(.+)Percent\\w*><>MeanRate
+          name: kafka_$1_$2_$3_percent
+          type: GAUGE
+        - pattern: kafka.(\\w+)<type=(.+), name=(.+)Percent\\w*><>Value
+          name: kafka_$1_$2_$3_percent
+          type: GAUGE
+        - pattern: kafka.(\\w+)<type=(.+), name=(.+)Percent\\w*, (.+)=(.+)><>Value
+          name: kafka_$1_$2_$3_percent
+          type: GAUGE
+          labels:
+            "$4": "$5"
+        - pattern: kafka.(\\w+)<type=(.+), name=(.+)PerSec\\w*, (.+)=(.+), (.+)=(.+)><>Count
+          name: kafka_$1_$2_$3_total
+          type: COUNTER
+          labels:
+            "$4": "$5"
+            "$6": "$7"
+        - pattern: kafka.(\\w+)<type=(.+), name=(.+)PerSec\\w*, (.+)=(.+)><>Count
+          name: kafka_$1_$2_$3_total
+          type: COUNTER
+          labels:
+            "$4": "$5"
+        - pattern: kafka.(\\w+)<type=(.+), name=(.+)PerSec\\w*><>Count
+          name: kafka_$1_$2_$3_total
+          type: COUNTER
+        - pattern: kafka.(\\w+)<type=(.+), name=(.+), (.+)=(.+), (.+)=(.+)><>Value
+          name: kafka_$1_$2_$3
+          type: GAUGE
+          labels:
+            "$4": "$5"
+            "$6": "$7"
+        - pattern: kafka.(\\w+)<type=(.+), name=(.+), (.+)=(.+)><>Value
+          name: kafka_$1_$2_$3
+          type: GAUGE
+          labels:
+            "$4": "$5"
+        - pattern: kafka.(\\w+)<type=(.+), name=(.+)><>Value
+          name: kafka_$1_$2_$3
+          type: GAUGE
+        - pattern: kafka.(\\w+)<type=(.+), name=(.+), (.+)=(.+), (.+)=(.+)><>Count
+          name: kafka_$1_$2_$3_count
+          type: COUNTER
+          labels:
+            "$4": "$5"
+            "$6": "$7"
+        - pattern: kafka.(\\w+)<type=(.+), name=(.+), (.+)=(.*), (.+)=(.+)><>(\\d+)thPercentile
+          name: kafka_$1_$2_$3
+          type: GAUGE
+          labels:
+            "$4": "$5"
+            "$6": "$7"
+            quantile: "0.$8"
+        - pattern: kafka.(\\w+)<type=(.+), name=(.+), (.+)=(.+)><>Count
+          name: kafka_$1_$2_$3_count
+          type: COUNTER
+          labels:
+            "$4": "$5"
+        - pattern: kafka.(\\w+)<type=(.+), name=(.+), (.+)=(.*)><>(\\d+)thPercentile
+          name: kafka_$1_$2_$3
+          type: GAUGE
+          labels:
+            "$4": "$5"
+            quantile: "0.$6"
+        - pattern: kafka.(\\w+)<type=(.+), name=(.+)><>Count
+          name: kafka_$1_$2_$3_count
+          type: COUNTER
+        - pattern: kafka.(\\w+)<type=(.+), name=(.+)><>(\\d+)thPercentile
+          name: kafka_$1_$2_$3
+          type: GAUGE
+          labels:
+            quantile: "0.$4"
+        - pattern: "kafka.server<type=raft-metrics><>(.+-total|.+-max):"
+          name: kafka_server_raftmetrics_$1
+          type: COUNTER
+        - pattern: "kafka.server<type=raft-metrics><>(current-state): (.+)"
+          name: kafka_server_raftmetrics_$1
+          value: 1
+          type: UNTYPED
+          labels:
+            $1: "$2"
+        - pattern: "kafka.server<type=raft-metrics><>(.+):"
+          name: kafka_server_raftmetrics_$1
+          type: GAUGE
+        - pattern: "kafka.server<type=raft-channel-metrics><>(.+-total|.+-max):"
+          name: kafka_server_raftchannelmetrics_$1
+          type: COUNTER
+        - pattern: "kafka.server<type=raft-channel-metrics><>(.+):"
+          name: kafka_server_raftchannelmetrics_$1
+          type: GAUGE
+        - pattern: "kafka.server<type=broker-metadata-metrics><>(.+):"
+          name: kafka_server_brokermetadatametrics_$1
+          type: GAUGE
         """
-          lowercaseOutputName: true
-          rules:
-          - pattern: kafka.server<type=(.+), name=(.+), clientId=(.+), topic=(.+), partition=(.*)><>Value
-            name: kafka_server_$1_$2
-            type: GAUGE
-            labels:
-              clientId: "$3"
-              topic: "$4"
-              partition: "$5"
-          - pattern: kafka.server<type=(.+), name=(.+), clientId=(.+), brokerHost=(.+), brokerPort=(.+)><>Value
-            name: kafka_server_$1_$2
-            type: GAUGE
-            labels:
-              clientId: "$3"
-              broker: "$4:$5"
-          - pattern: kafka.server<type=(.+), cipher=(.+), protocol=(.+), listener=(.+), networkProcessor=(.+)><>connections
-            name: kafka_server_$1_connections_tls_info
-            type: GAUGE
-            labels:
-              cipher: "$2"
-              protocol: "$3"
-              listener: "$4"
-              networkProcessor: "$5"
-          - pattern: kafka.server<type=(.+), clientSoftwareName=(.+), clientSoftwareVersion=(.+), listener=(.+), networkProcessor=(.+)><>connections
-            name: kafka_server_$1_connections_software
-            type: GAUGE
-            labels:
-              clientSoftwareName: "$2"
-              clientSoftwareVersion: "$3"
-              listener: "$4"
-              networkProcessor: "$5"
-          - pattern: "kafka.server<type=(.+), listener=(.+), networkProcessor=(.+)><>(.+-total):"
-            name: kafka_server_$1_$4
-            type: COUNTER
-            labels:
-              listener: "$2"
-              networkProcessor: "$3"
-          - pattern: "kafka.server<type=(.+), listener=(.+), networkProcessor=(.+)><>(.+):"
-            name: kafka_server_$1_$4
-            type: GAUGE
-            labels:
-              listener: "$2"
-              networkProcessor: "$3"
-          - pattern: kafka.server<type=(.+), listener=(.+), networkProcessor=(.+)><>(.+-total)
-            name: kafka_server_$1_$4
-            type: COUNTER
-            labels:
-              listener: "$2"
-              networkProcessor: "$3"
-          - pattern: kafka.server<type=(.+), listener=(.+), networkProcessor=(.+)><>(.+)
-            name: kafka_server_$1_$4
-            type: GAUGE
-            labels:
-              listener: "$2"
-              networkProcessor: "$3"
-          - pattern: kafka.(\\w+)<type=(.+), name=(.+)Percent\\w*><>MeanRate
-            name: kafka_$1_$2_$3_percent
-            type: GAUGE
-          - pattern: kafka.(\\w+)<type=(.+), name=(.+)Percent\\w*><>Value
-            name: kafka_$1_$2_$3_percent
-            type: GAUGE
-          - pattern: kafka.(\\w+)<type=(.+), name=(.+)Percent\\w*, (.+)=(.+)><>Value
-            name: kafka_$1_$2_$3_percent
-            type: GAUGE
-            labels:
-              "$4": "$5"
-          - pattern: kafka.(\\w+)<type=(.+), name=(.+)PerSec\\w*, (.+)=(.+), (.+)=(.+)><>Count
-            name: kafka_$1_$2_$3_total
-            type: COUNTER
-            labels:
-              "$4": "$5"
-              "$6": "$7"
-          - pattern: kafka.(\\w+)<type=(.+), name=(.+)PerSec\\w*, (.+)=(.+)><>Count
-            name: kafka_$1_$2_$3_total
-            type: COUNTER
-            labels:
-              "$4": "$5"
-          - pattern: kafka.(\\w+)<type=(.+), name=(.+)PerSec\\w*><>Count
-            name: kafka_$1_$2_$3_total
-            type: COUNTER
-          - pattern: kafka.(\\w+)<type=(.+), name=(.+), (.+)=(.+), (.+)=(.+)><>Value
-            name: kafka_$1_$2_$3
-            type: GAUGE
-            labels:
-              "$4": "$5"
-              "$6": "$7"
-          - pattern: kafka.(\\w+)<type=(.+), name=(.+), (.+)=(.+)><>Value
-            name: kafka_$1_$2_$3
-            type: GAUGE
-            labels:
-              "$4": "$5"
-          - pattern: kafka.(\\w+)<type=(.+), name=(.+)><>Value
-            name: kafka_$1_$2_$3
-            type: GAUGE
-          - pattern: kafka.(\\w+)<type=(.+), name=(.+), (.+)=(.+), (.+)=(.+)><>Count
-            name: kafka_$1_$2_$3_count
-            type: COUNTER
-            labels:
-              "$4": "$5"
-              "$6": "$7"
-          - pattern: kafka.(\\w+)<type=(.+), name=(.+), (.+)=(.*), (.+)=(.+)><>(\\d+)thPercentile
-            name: kafka_$1_$2_$3
-            type: GAUGE
-            labels:
-              "$4": "$5"
-              "$6": "$7"
-              quantile: "0.$8"
-          - pattern: kafka.(\\w+)<type=(.+), name=(.+), (.+)=(.+)><>Count
-            name: kafka_$1_$2_$3_count
-            type: COUNTER
-            labels:
-              "$4": "$5"
-          - pattern: kafka.(\\w+)<type=(.+), name=(.+), (.+)=(.*)><>(\\d+)thPercentile
-            name: kafka_$1_$2_$3
-            type: GAUGE
-            labels:
-              "$4": "$5"
-              quantile: "0.$6"
-          - pattern: kafka.(\\w+)<type=(.+), name=(.+)><>Count
-            name: kafka_$1_$2_$3_count
-            type: COUNTER
-          - pattern: kafka.(\\w+)<type=(.+), name=(.+)><>(\\d+)thPercentile
-            name: kafka_$1_$2_$3
-            type: GAUGE
-            labels:
-              quantile: "0.$4"
-          - pattern: "kafka.server<type=raft-metrics><>(.+-total|.+-max):"
-            name: kafka_server_raftmetrics_$1
-            type: COUNTER
-          - pattern: "kafka.server<type=raft-metrics><>(current-state): (.+)"
-            name: kafka_server_raftmetrics_$1
-            value: 1
-            type: UNTYPED
-            labels:
-              $1: "$2"
-          - pattern: "kafka.server<type=raft-metrics><>(.+):"
-            name: kafka_server_raftmetrics_$1
-            type: GAUGE
-          - pattern: "kafka.server<type=raft-channel-metrics><>(.+-total|.+-max):"
-            name: kafka_server_raftchannelmetrics_$1
-            type: COUNTER
-          - pattern: "kafka.server<type=raft-channel-metrics><>(.+):"
-            name: kafka_server_raftchannelmetrics_$1
-            type: GAUGE
-          - pattern: "kafka.server<type=broker-metadata-metrics><>(.+):"
-            name: kafka_server_brokermetadatametrics_$1
-            type: GAUGE
-          """
     }
-
-    _clusterOperatorMonitor: monitoringv1.#PodMonitor & {
+    _clusterOperatorMonitor: PODMONITOR.#x & {
       apiVersion: "monitoring.coreos.com/v1"
       kind:       "PodMonitor"
       metadata: {
@@ -543,16 +561,13 @@ spec:
       }
       spec: {
         selector: matchLabels: "strimzi.io/kind": "cluster-operator"
-        podMetricsEndpoints: [
-          {
-            path: "/metrics"
-            port: "tcp-prometheus"
-          },
-        ]
+        podMetricsEndpoints: [{
+          path: "/metrics"
+          port: "tcp-prometheus"
+        }]
       }
     }
-
-    _controllerMonitor: monitoringv1.#PodMonitor & {
+    _controllerMonitor: PODMONITOR.#x & {
       apiVersion: "monitoring.coreos.com/v1"
       kind:       "PodMonitor"
       metadata: {
@@ -562,16 +577,13 @@ spec:
       }
       spec: {
         selector: matchLabels: "strimzi.io/controller-role": "true"
-        podMetricsEndpoints: [
-          {
-            path: "/metrics"
-            port: "tcp-prometheus"
-          },
-        ]
+        podMetricsEndpoints: [{
+          path: "/metrics"
+          port: "tcp-prometheus"
+        }]
       }
     }
-
-    _brokerMonitor: monitoringv1.#PodMonitor & {
+    _brokerMonitor: PODMONITOR.#x & {
       apiVersion: "monitoring.coreos.com/v1"
       kind:       "PodMonitor"
       metadata: {
@@ -581,12 +593,1211 @@ spec:
       }
       spec: {
         selector: matchLabels: "strimzi.io/broker-role": "true"
-        podMetricsEndpoints: [
-          {
-            path: "/metrics"
-            port: "tcp-prometheus"
-          },
-        ]
+        podMetricsEndpoints: [{
+          path: "/metrics"
+          port: "tcp-prometheus"
+        }]
       }
     }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#TypeMeta
+    let TYPEMETA = {
+      #x: {
+        kind?:       string @go(Kind) @protobuf(1,bytes,opt)
+        apiVersion?: string @go(APIVersion) @protobuf(2,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#ObjectMeta
+    let OBJECTMETA = {
+      #x: {
+        name?:                       string  @go(Name) @protobuf(1,bytes,opt)
+        generateName?:               string  @go(GenerateName) @protobuf(2,bytes,opt)
+        namespace?:                  string  @go(Namespace) @protobuf(3,bytes,opt)
+        selfLink?:                   string  @go(SelfLink) @protobuf(4,bytes,opt)
+        uid?:                        UID.#x  @go(UID) @protobuf(5,bytes,opt,casttype=k8s.io/kubernetes/pkg/types.UID)
+        resourceVersion?:            string  @go(ResourceVersion) @protobuf(6,bytes,opt)
+        generation?:                 int64   @go(Generation) @protobuf(7,varint,opt)
+        creationTimestamp?:          TIME.#x @go(CreationTimestamp) @protobuf(8,bytes,opt)
+        deletionTimestamp?:          TIME.#x @go(DeletionTimestamp,*Time) @protobuf(9,bytes,opt)
+        deletionGracePeriodSeconds?: int64   @go(DeletionGracePeriodSeconds,*int64) @protobuf(10,varint,opt)
+        labels?: {
+          [string]: string
+        } @go(Labels,map[string]string) @protobuf(11,bytes,rep)
+        annotations?: {
+          [string]: string
+        } @go(Annotations,map[string]string) @protobuf(12,bytes,rep)
+        ownerReferences?: [...OWNERREFERENCE.#x] @go(OwnerReferences,[]OwnerReference) @protobuf(13,bytes,rep)
+        finalizers?: [...string] @go(Finalizers,[]string) @protobuf(14,bytes,rep)
+        managedFields?: [...MANAGEDFIELDSENTRY.#x] @go(ManagedFields,[]ManagedFieldsEntry) @protobuf(17,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/types".#UID
+    let UID = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#Time
+    let TIME = {
+      #x: _
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#OwnerReference
+    let OWNERREFERENCE = {
+      #x: {
+        apiVersion:          string @go(APIVersion) @protobuf(5,bytes,opt)
+        kind:                string @go(Kind) @protobuf(1,bytes,opt)
+        name:                string @go(Name) @protobuf(3,bytes,opt)
+        uid:                 UID.#x @go(UID) @protobuf(4,bytes,opt,casttype=k8s.io/apimachinery/pkg/types.UID)
+        controller?:         bool   @go(Controller,*bool) @protobuf(6,varint,opt)
+        blockOwnerDeletion?: bool   @go(BlockOwnerDeletion,*bool) @protobuf(7,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#ManagedFieldsEntry
+    let MANAGEDFIELDSENTRY = {
+      #x: {
+        manager?:     string                        @go(Manager) @protobuf(1,bytes,opt)
+        operation?:   MANAGEDFIELDSOPERATIONTYPE.#x @go(Operation) @protobuf(2,bytes,opt,casttype=ManagedFieldsOperationType)
+        apiVersion?:  string                        @go(APIVersion) @protobuf(3,bytes,opt)
+        time?:        TIME.#x                       @go(Time,*Time) @protobuf(4,bytes,opt)
+        fieldsType?:  string                        @go(FieldsType) @protobuf(6,bytes,opt)
+        fieldsV1?:    FIELDSV1.#x                   @go(FieldsV1,*FieldsV1) @protobuf(7,bytes,opt)
+        subresource?: string                        @go(Subresource) @protobuf(8,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#ManagedFieldsOperationType
+    let MANAGEDFIELDSOPERATIONTYPE = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#FieldsV1
+    let FIELDSV1 = {
+      #x: _
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#TypedLocalObjectReference
+    let TYPEDLOCALOBJECTREFERENCE = {
+      #x: {
+        apiGroup?: null | string @go(APIGroup,*string) @protobuf(1,bytes,opt)
+        kind:      string        @go(Kind) @protobuf(2,bytes,opt)
+        name:      string        @go(Name) @protobuf(3,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#Duration
+    let DURATION = {
+      #x: _
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#Condition
+    let CONDITION = {
+      #x: {
+        type:                string             @go(Type) @protobuf(1,bytes,opt)
+        status:              CONDITIONSTATUS.#x @go(Status) @protobuf(2,bytes,opt)
+        observedGeneration?: int64              @go(ObservedGeneration) @protobuf(3,varint,opt)
+        lastTransitionTime:  TIME.#x            @go(LastTransitionTime) @protobuf(4,bytes,opt)
+        reason:              string             @go(Reason) @protobuf(5,bytes,opt)
+        message:             string             @go(Message) @protobuf(6,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#ConditionStatus
+    let CONDITIONSTATUS = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1".#JSON
+    let JSON = {
+      #x: _
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#TypedObjectReference
+    let TYPEDOBJECTREFERENCE = {
+      #x: {
+        apiGroup?:  null | string @go(APIGroup,*string) @protobuf(1,bytes,opt)
+        kind:       string        @go(Kind) @protobuf(2,bytes,opt)
+        name:       string        @go(Name) @protobuf(3,bytes,opt)
+        namespace?: null | string @go(Namespace,*string) @protobuf(4,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#Namespace
+    let NAMESPACE = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x      @go(ObjectMeta) @protobuf(1,bytes,opt)
+        spec?:     NAMESPACESPEC.#x   @go(Spec) @protobuf(2,bytes,opt)
+        status?:   NAMESPACESTATUS.#x @go(Status) @protobuf(3,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#NamespaceSpec
+    let NAMESPACESPEC = {
+      #x: {
+        finalizers?: [...FINALIZERNAME.#x] @go(Finalizers,[]FinalizerName) @protobuf(1,bytes,rep,casttype=FinalizerName)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#FinalizerName
+    let FINALIZERNAME = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#NamespaceStatus
+    let NAMESPACESTATUS = {
+      #x: {
+        phase?: NAMESPACEPHASE.#x @go(Phase) @protobuf(1,bytes,opt,casttype=NamespacePhase)
+        conditions?: [...NAMESPACECONDITION.#x] @go(Conditions,[]NamespaceCondition) @protobuf(2,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#NamespacePhase
+    let NAMESPACEPHASE = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#NamespaceCondition
+    let NAMESPACECONDITION = {
+      #x: {
+        type:                NAMESPACECONDITIONTYPE.#x @go(Type) @protobuf(1,bytes,opt,casttype=NamespaceConditionType)
+        status:              CONDITIONSTATUS_1.#x      @go(Status) @protobuf(2,bytes,opt,casttype=ConditionStatus)
+        lastTransitionTime?: TIME.#x                   @go(LastTransitionTime) @protobuf(4,bytes,opt)
+        reason?:             string                    @go(Reason) @protobuf(5,bytes,opt)
+        message?:            string                    @go(Message) @protobuf(6,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#NamespaceConditionType
+    let NAMESPACECONDITIONTYPE = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ConditionStatus
+    let CONDITIONSTATUS_1 = {
+      #x: string
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#Worktree
+    let WORKTREE = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x     @go(ObjectMeta)
+        spec?:     WORKTREESPEC.#x   @go(Spec)
+        status?:   WORKTREESTATUS.#x @go(Status)
+      }
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#WorktreeSpec
+    let WORKTREESPEC = {
+      #x: {
+        files?: {
+          [string]: bytes
+        } @go(Files,map[string][]byte)
+      }
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#WorktreeStatus
+    let WORKTREESTATUS = {
+      #x: {
+        conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition)
+        url?:           null | string @go(URL,*string)
+        referenceName?: null | string @go(ReferenceName,*string)
+        commitHash?:    null | string @go(CommitHash,*string)
+      }
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#WorktreeKind
+    let WORKTREEKIND = {
+      #x: "Worktree"
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#Kustomization
+    let KUSTOMIZATION = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x          @go(ObjectMeta)
+        spec?:     KUSTOMIZATIONSPEC.#x   @go(Spec)
+        status?:   KUSTOMIZATIONSTATUS.#x @go(Status)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#KustomizationSpec
+    let KUSTOMIZATIONSPEC = {
+      #x: {
+        commonMetadata?: null | COMMONMETADATA.#x @go(CommonMetadata,*CommonMetadata)
+        dependsOn?: [...NAMESPACEDOBJECTREFERENCE.#x] @go(DependsOn,[]meta.NamespacedObjectReference)
+        decryption?:    null | DECRYPTION.#x          @go(Decryption,*Decryption)
+        interval:       DURATION.#x                   @go(Interval)
+        retryInterval?: null | DURATION.#x            @go(RetryInterval,*metav1.Duration)
+        kubeConfig?:    null | KUBECONFIGREFERENCE.#x @go(KubeConfig,*meta.KubeConfigReference)
+        path?:          string                        @go(Path)
+        postBuild?:     null | POSTBUILD.#x           @go(PostBuild,*PostBuild)
+        prune:          bool                          @go(Prune)
+        healthChecks?: [...NAMESPACEDOBJECTKINDREFERENCE.#x] @go(HealthChecks,[]meta.NamespacedObjectKindReference)
+        namePrefix?: string @go(NamePrefix)
+        nameSuffix?: string @go(NameSuffix)
+        patches?: [...PATCH.#x] @go(Patches,[]kustomize.Patch)
+        images?: [...IMAGE.#x] @go(Images,[]kustomize.Image)
+        serviceAccountName?: string                           @go(ServiceAccountName)
+        sourceRef:           CROSSNAMESPACESOURCEREFERENCE.#x @go(SourceRef)
+        suspend?:            bool                             @go(Suspend)
+        targetNamespace?:    string                           @go(TargetNamespace)
+        timeout?:            null | DURATION.#x               @go(Timeout,*metav1.Duration)
+        force?:              bool                             @go(Force)
+        wait?:               bool                             @go(Wait)
+        components?: [...string] @go(Components,[]string)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#CommonMetadata
+    let COMMONMETADATA = {
+      #x: {
+        annotations?: {
+          [string]: string
+        } @go(Annotations,map[string]string)
+        labels?: {
+          [string]: string
+        } @go(Labels,map[string]string)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#NamespacedObjectReference
+    let NAMESPACEDOBJECTREFERENCE = {
+      #x: {
+        name:       string @go(Name)
+        namespace?: string @go(Namespace)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#Decryption
+    let DECRYPTION = {
+      #x: {
+        provider:   string                         @go(Provider)
+        secretRef?: null | LOCALOBJECTREFERENCE.#x @go(SecretRef,*meta.LocalObjectReference)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#LocalObjectReference
+    let LOCALOBJECTREFERENCE = {
+      #x: {
+        name: string @go(Name)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#KubeConfigReference
+    let KUBECONFIGREFERENCE = {
+      #x: {
+        configMapRef?: null | LOCALOBJECTREFERENCE.#x @go(ConfigMapRef,*LocalObjectReference)
+        secretRef?:    null | SECRETKEYREFERENCE.#x   @go(SecretRef,*SecretKeyReference)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#SecretKeyReference
+    let SECRETKEYREFERENCE = {
+      #x: {
+        name: string @go(Name)
+        key?: string @go(Key)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#PostBuild
+    let POSTBUILD = {
+      #x: {
+        substitute?: {
+          [string]: string
+        } @go(Substitute,map[string]string)
+        substituteFrom?: [...SUBSTITUTEREFERENCE.#x] @go(SubstituteFrom,[]SubstituteReference)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#SubstituteReference
+    let SUBSTITUTEREFERENCE = {
+      #x: {
+        kind:      string @go(Kind)
+        name:      string @go(Name)
+        optional?: bool   @go(Optional)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#NamespacedObjectKindReference
+    let NAMESPACEDOBJECTKINDREFERENCE = {
+      #x: {
+        apiVersion?: string @go(APIVersion)
+        kind:        string @go(Kind)
+        name:        string @go(Name)
+        namespace?:  string @go(Namespace)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/kustomize".#Patch
+    let PATCH = {
+      #x: {
+        patch:   string             @go(Patch)
+        target?: null | SELECTOR.#x @go(Target,*Selector)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/kustomize".#Selector
+    let SELECTOR = {
+      #x: {
+        group?:              string @go(Group)
+        version?:            string @go(Version)
+        kind?:               string @go(Kind)
+        namespace?:          string @go(Namespace)
+        name?:               string @go(Name)
+        annotationSelector?: string @go(AnnotationSelector)
+        labelSelector?:      string @go(LabelSelector)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/kustomize".#Image
+    let IMAGE = {
+      #x: {
+        name:     string @go(Name)
+        newName?: string @go(NewName)
+        newTag?:  string @go(NewTag)
+        digest?:  string @go(Digest)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#CrossNamespaceSourceReference
+    let CROSSNAMESPACESOURCEREFERENCE = {
+      #x: {
+        apiVersion?: string @go(APIVersion)
+        kind:        string @go(Kind)
+        name:        string @go(Name)
+        namespace?:  string @go(Namespace)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#KustomizationStatus
+    let KUSTOMIZATIONSTATUS = {
+      #x: {
+        RECONCILEREQUESTSTATUS.#x
+        observedGeneration?: int64 @go(ObservedGeneration)
+        conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition)
+        lastAppliedRevision?:   string                      @go(LastAppliedRevision)
+        lastAttemptedRevision?: string                      @go(LastAttemptedRevision)
+        inventory?:             null | RESOURCEINVENTORY.#x @go(Inventory,*ResourceInventory)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#ReconcileRequestStatus
+    let RECONCILEREQUESTSTATUS = {
+      #x: {
+        lastHandledReconcileAt?: string @go(LastHandledReconcileAt)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#ResourceInventory
+    let RESOURCEINVENTORY = {
+      #x: {
+        entries: [...RESOURCEREF.#x] @go(Entries,[]ResourceRef)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#ResourceRef
+    let RESOURCEREF = {
+      #x: {
+        id: string @go(ID)
+        v:  string @go(Version)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#KustomizationKind
+    let KUSTOMIZATIONKIND = {
+      #x: "Kustomization"
+    }
+
+    //cue:path: "github.com/fluxcd/source-controller/api/v1".#GitRepositoryKind
+    let GITREPOSITORYKIND = {
+      #x: "GitRepository"
+    }
+
+    //cue:path: "github.com/fluxcd/source-controller/api/v1".#HelmRepository
+    let HELMREPOSITORY = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x           @go(ObjectMeta)
+        spec?:     HELMREPOSITORYSPEC.#x   @go(Spec)
+        status?:   HELMREPOSITORYSTATUS.#x @go(Status)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/source-controller/api/v1".#HelmRepositorySpec
+    let HELMREPOSITORYSPEC = {
+      #x: {
+        url:              string                         @go(URL)
+        secretRef?:       null | LOCALOBJECTREFERENCE.#x @go(SecretRef,*meta.LocalObjectReference)
+        certSecretRef?:   null | LOCALOBJECTREFERENCE.#x @go(CertSecretRef,*meta.LocalObjectReference)
+        passCredentials?: bool                           @go(PassCredentials)
+        interval?:        DURATION.#x                    @go(Interval)
+        insecure?:        bool                           @go(Insecure)
+        timeout?:         null | DURATION.#x             @go(Timeout,*metav1.Duration)
+        suspend?:         bool                           @go(Suspend)
+        accessFrom?:      null | ACCESSFROM.#x           @go(AccessFrom,*acl.AccessFrom)
+        type?:            string                         @go(Type)
+        provider?:        string                         @go(Provider)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/acl".#AccessFrom
+    let ACCESSFROM = {
+      #x: {
+        namespaceSelectors: [...NAMESPACESELECTOR.#x] @go(NamespaceSelectors,[]NamespaceSelector)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/acl".#NamespaceSelector
+    let NAMESPACESELECTOR = {
+      #x: {
+        matchLabels?: {
+          [string]: string
+        } @go(MatchLabels,map[string]string)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/source-controller/api/v1".#HelmRepositoryStatus
+    let HELMREPOSITORYSTATUS = {
+      #x: {
+        RECONCILEREQUESTSTATUS.#x
+        observedGeneration?: int64 @go(ObservedGeneration)
+        conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition)
+        url?:      string             @go(URL)
+        artifact?: null | ARTIFACT.#x @go(Artifact,*meta.Artifact)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#Artifact
+    let ARTIFACT = {
+      #x: {
+        digest:         string       @go(Digest)
+        path:           string       @go(Path)
+        url:            string       @go(URL)
+        revision:       string       @go(Revision)
+        lastUpdateTime: TIME.#x      @go(LastUpdateTime)
+        size?:          null | int64 @go(Size,*int64)
+        metadata?: {
+          [string]: string
+        } @go(Metadata,map[string]string)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/source-controller/api/v1".#HelmRepositoryKind
+    let HELMREPOSITORYKIND = {
+      #x: "HelmRepository"
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#HelmRelease
+    let HELMRELEASE = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x        @go(ObjectMeta)
+        spec?:     HELMRELEASESPEC.#x   @go(Spec)
+        status?:   HELMRELEASESTATUS.#x @go(Status)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#HelmReleaseSpec
+    let HELMRELEASESPEC = {
+      #x: {
+        chart?:            null | HELMCHARTTEMPLATE.#x               @go(Chart,*HelmChartTemplate)
+        chartRef?:         null | CROSSNAMESPACESOURCEREFERENCE_1.#x @go(ChartRef,*CrossNamespaceSourceReference)
+        interval:          DURATION.#x                               @go(Interval)
+        kubeConfig?:       null | KUBECONFIGREFERENCE.#x             @go(KubeConfig,*meta.KubeConfigReference)
+        suspend?:          bool                                      @go(Suspend)
+        releaseName?:      string                                    @go(ReleaseName)
+        targetNamespace?:  string                                    @go(TargetNamespace)
+        storageNamespace?: string                                    @go(StorageNamespace)
+        dependsOn?: [...NAMESPACEDOBJECTREFERENCE.#x] @go(DependsOn,[]meta.NamespacedObjectReference)
+        timeout?:            null | DURATION.#x       @go(Timeout,*metav1.Duration)
+        maxHistory?:         null | int               @go(MaxHistory,*int)
+        serviceAccountName?: string                   @go(ServiceAccountName)
+        persistentClient?:   null | bool              @go(PersistentClient,*bool)
+        driftDetection?:     null | DRIFTDETECTION.#x @go(DriftDetection,*DriftDetection)
+        install?:            null | INSTALL.#x        @go(Install,*Install)
+        upgrade?:            null | UPGRADE.#x        @go(Upgrade,*Upgrade)
+        test?:               null | TEST.#x           @go(Test,*Test)
+        rollback?:           null | ROLLBACK.#x       @go(Rollback,*Rollback)
+        uninstall?:          null | UNINSTALL.#x      @go(Uninstall,*Uninstall)
+        valuesFrom?: [...VALUESREFERENCE.#x] @go(ValuesFrom,[]ValuesReference)
+        values?: null | JSON.#x @go(Values,*apiextensionsv1.JSON)
+        postRenderers?: [...POSTRENDERER.#x] @go(PostRenderers,[]PostRenderer)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#HelmChartTemplate
+    let HELMCHARTTEMPLATE = {
+      #x: {
+        metadata?: null | HELMCHARTTEMPLATEOBJECTMETA.#x @go(ObjectMeta,*HelmChartTemplateObjectMeta)
+        spec:      HELMCHARTTEMPLATESPEC.#x              @go(Spec)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#HelmChartTemplateObjectMeta
+    let HELMCHARTTEMPLATEOBJECTMETA = {
+      #x: {
+        labels?: {
+          [string]: string
+        } @go(Labels,map[string]string)
+        annotations?: {
+          [string]: string
+        } @go(Annotations,map[string]string)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#HelmChartTemplateSpec
+    let HELMCHARTTEMPLATESPEC = {
+      #x: {
+        chart:              string                           @go(Chart)
+        version?:           string                           @go(Version)
+        sourceRef:          CROSSNAMESPACEOBJECTREFERENCE.#x @go(SourceRef)
+        interval?:          null | DURATION.#x               @go(Interval,*metav1.Duration)
+        reconcileStrategy?: string                           @go(ReconcileStrategy)
+        valuesFiles?: [...string] @go(ValuesFiles,[]string)
+        ignoreMissingValuesFiles?: bool                                    @go(IgnoreMissingValuesFiles)
+        verify?:                   null | HELMCHARTTEMPLATEVERIFICATION.#x @go(Verify,*HelmChartTemplateVerification)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#CrossNamespaceObjectReference
+    let CROSSNAMESPACEOBJECTREFERENCE = {
+      #x: {
+        apiVersion?: string @go(APIVersion)
+        kind?:       string @go(Kind)
+        name:        string @go(Name)
+        namespace?:  string @go(Namespace)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#HelmChartTemplateVerification
+    let HELMCHARTTEMPLATEVERIFICATION = {
+      #x: {
+        provider:   string                         @go(Provider)
+        secretRef?: null | LOCALOBJECTREFERENCE.#x @go(SecretRef,*meta.LocalObjectReference)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#CrossNamespaceSourceReference
+    let CROSSNAMESPACESOURCEREFERENCE_1 = {
+      #x: {
+        apiVersion?: string @go(APIVersion)
+        kind:        string @go(Kind)
+        name:        string @go(Name)
+        namespace?:  string @go(Namespace)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#DriftDetection
+    let DRIFTDETECTION = {
+      #x: {
+        mode?: DRIFTDETECTIONMODE.#x @go(Mode)
+        ignore?: [...IGNORERULE.#x] @go(Ignore,[]IgnoreRule)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#DriftDetectionMode
+    let DRIFTDETECTIONMODE = {
+      #x: string
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#IgnoreRule
+    let IGNORERULE = {
+      #x: {
+        paths: [...string] @go(Paths,[]string)
+        target?: null | SELECTOR.#x @go(Target,*kustomize.Selector)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#Install
+    let INSTALL = {
+      #x: {
+        timeout?:                  null | DURATION.#x           @go(Timeout,*metav1.Duration)
+        remediation?:              null | INSTALLREMEDIATION.#x @go(Remediation,*InstallRemediation)
+        disableWait?:              bool                         @go(DisableWait)
+        disableWaitForJobs?:       bool                         @go(DisableWaitForJobs)
+        disableHooks?:             bool                         @go(DisableHooks)
+        disableOpenAPIValidation?: bool                         @go(DisableOpenAPIValidation)
+        disableSchemaValidation?:  bool                         @go(DisableSchemaValidation)
+        replace?:                  bool                         @go(Replace)
+        skipCRDs?:                 bool                         @go(SkipCRDs)
+        crds?:                     CRDSPOLICY.#x                @go(CRDs)
+        createNamespace?:          bool                         @go(CreateNamespace)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#InstallRemediation
+    let INSTALLREMEDIATION = {
+      #x: {
+        retries?:              int         @go(Retries)
+        ignoreTestFailures?:   null | bool @go(IgnoreTestFailures,*bool)
+        remediateLastFailure?: null | bool @go(RemediateLastFailure,*bool)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#CRDsPolicy
+    let CRDSPOLICY = {
+      #x: string
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#Upgrade
+    let UPGRADE = {
+      #x: {
+        timeout?:                  null | DURATION.#x           @go(Timeout,*metav1.Duration)
+        remediation?:              null | UPGRADEREMEDIATION.#x @go(Remediation,*UpgradeRemediation)
+        disableWait?:              bool                         @go(DisableWait)
+        disableWaitForJobs?:       bool                         @go(DisableWaitForJobs)
+        disableHooks?:             bool                         @go(DisableHooks)
+        disableOpenAPIValidation?: bool                         @go(DisableOpenAPIValidation)
+        disableSchemaValidation?:  bool                         @go(DisableSchemaValidation)
+        force?:                    bool                         @go(Force)
+        preserveValues?:           bool                         @go(PreserveValues)
+        cleanupOnFail?:            bool                         @go(CleanupOnFail)
+        crds?:                     CRDSPOLICY.#x                @go(CRDs)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#UpgradeRemediation
+    let UPGRADEREMEDIATION = {
+      #x: {
+        retries?:              int                           @go(Retries)
+        ignoreTestFailures?:   null | bool                   @go(IgnoreTestFailures,*bool)
+        remediateLastFailure?: null | bool                   @go(RemediateLastFailure,*bool)
+        strategy?:             null | REMEDIATIONSTRATEGY.#x @go(Strategy,*RemediationStrategy)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#RemediationStrategy
+    let REMEDIATIONSTRATEGY = {
+      #x: string
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#Test
+    let TEST = {
+      #x: {
+        enable?:         bool               @go(Enable)
+        timeout?:        null | DURATION.#x @go(Timeout,*metav1.Duration)
+        ignoreFailures?: bool               @go(IgnoreFailures)
+        filters?: null | [...FILTER.#x] @go(Filters,*[]Filter)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#Filter
+    let FILTER = {
+      #x: {
+        name:     string @go(Name)
+        exclude?: bool   @go(Exclude)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#Rollback
+    let ROLLBACK = {
+      #x: {
+        timeout?:            null | DURATION.#x @go(Timeout,*metav1.Duration)
+        disableWait?:        bool               @go(DisableWait)
+        disableWaitForJobs?: bool               @go(DisableWaitForJobs)
+        disableHooks?:       bool               @go(DisableHooks)
+        recreate?:           bool               @go(Recreate)
+        force?:              bool               @go(Force)
+        cleanupOnFail?:      bool               @go(CleanupOnFail)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#Uninstall
+    let UNINSTALL = {
+      #x: {
+        timeout?:             null | DURATION.#x @go(Timeout,*metav1.Duration)
+        disableHooks?:        bool               @go(DisableHooks)
+        keepHistory?:         bool               @go(KeepHistory)
+        disableWait?:         bool               @go(DisableWait)
+        deletionPropagation?: null | string      @go(DeletionPropagation,*string)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#ValuesReference
+    let VALUESREFERENCE = {
+      #x: {
+        kind:        string @go(Kind)
+        name:        string @go(Name)
+        valuesKey?:  string @go(ValuesKey)
+        targetPath?: string @go(TargetPath)
+        optional?:   bool   @go(Optional)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#PostRenderer
+    let POSTRENDERER = {
+      #x: {
+        kustomize?: null | KUSTOMIZE.#x @go(Kustomize,*Kustomize)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#Kustomize
+    let KUSTOMIZE = {
+      #x: {
+        patches?: [...PATCH.#x] @go(Patches,[]kustomize.Patch)
+        images?: [...IMAGE.#x] @go(Images,[]kustomize.Image)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#HelmReleaseStatus
+    let HELMRELEASESTATUS = {
+      #x: {
+        RECONCILEREQUESTSTATUS.#x
+        observedGeneration?:          int64  @go(ObservedGeneration)
+        observedPostRenderersDigest?: string @go(ObservedPostRenderersDigest)
+        lastAttemptedGeneration?:     int64  @go(LastAttemptedGeneration)
+        conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition)
+        helmChart?:                   string           @go(HelmChart)
+        storageNamespace?:            string           @go(StorageNamespace)
+        history?:                     SNAPSHOTS.#x     @go(History)
+        lastAttemptedReleaseAction?:  RELEASEACTION.#x @go(LastAttemptedReleaseAction)
+        failures?:                    int64            @go(Failures)
+        installFailures?:             int64            @go(InstallFailures)
+        upgradeFailures?:             int64            @go(UpgradeFailures)
+        lastAttemptedRevision?:       string           @go(LastAttemptedRevision)
+        lastAttemptedRevisionDigest?: string           @go(LastAttemptedRevisionDigest)
+        lastAttemptedValuesChecksum?: string           @go(LastAttemptedValuesChecksum)
+        lastReleaseRevision?:         int              @go(LastReleaseRevision)
+        lastAttemptedConfigDigest?:   string           @go(LastAttemptedConfigDigest)
+        lastHandledForceAt?:          string           @go(LastHandledForceAt)
+        lastHandledResetAt?:          string           @go(LastHandledResetAt)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#Snapshots
+    let SNAPSHOTS = {
+      #x: [...null | SNAPSHOT.#x]
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#Snapshot
+    let SNAPSHOT = {
+      #x: {
+        apiVersion?:   string  @go(APIVersion)
+        digest:        string  @go(Digest)
+        name:          string  @go(Name)
+        namespace:     string  @go(Namespace)
+        version:       int     @go(Version)
+        status:        string  @go(Status)
+        chartName:     string  @go(ChartName)
+        chartVersion:  string  @go(ChartVersion)
+        appVersion?:   string  @go(AppVersion)
+        configDigest:  string  @go(ConfigDigest)
+        firstDeployed: TIME.#x @go(FirstDeployed)
+        lastDeployed:  TIME.#x @go(LastDeployed)
+        deleted?:      TIME.#x @go(Deleted)
+        testHooks?: null | {
+          [string]: null | TESTHOOKSTATUS.#x
+        } @go(TestHooks,*map[string]*TestHookStatus)
+        ociDigest?: string @go(OCIDigest)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#TestHookStatus
+    let TESTHOOKSTATUS = {
+      #x: {
+        lastStarted?:   TIME.#x @go(LastStarted)
+        lastCompleted?: TIME.#x @go(LastCompleted)
+        phase?:         string  @go(Phase)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#ReleaseAction
+    let RELEASEACTION = {
+      #x: string
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#HelmReleaseKind
+    let HELMRELEASEKIND = {
+      #x: "HelmRelease"
+    }
+
+    //cue:path: "github.com/RedHatInsights/strimzi-client-go/apis/kafka.strimzi.io/v1beta2".#KafkaNodePool
+    let KAFKANODEPOOL = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x                 @go(ObjectMeta)
+        spec?:     null | KAFKANODEPOOLSPEC.#x   @go(Spec,*KafkaNodePoolSpec)
+        status?:   null | KAFKANODEPOOLSTATUS.#x @go(Status,*KafkaNodePoolStatus)
+      }
+    }
+
+    //cue:path: "github.com/RedHatInsights/strimzi-client-go/apis/kafka.strimzi.io/v1beta2".#KafkaNodePoolSpec
+    let KAFKANODEPOOLSPEC = {
+      #x: _
+    }
+
+    //cue:path: "github.com/RedHatInsights/strimzi-client-go/apis/kafka.strimzi.io/v1beta2".#KafkaNodePoolStatus
+    let KAFKANODEPOOLSTATUS = {
+      #x: {
+        clusterId?: null | string @go(ClusterId,*string)
+        conditions?: [...KAFKANODEPOOLSTATUSCONDITIONSELEM.#x] @go(Conditions,[]KafkaNodePoolStatusConditionsElem)
+        labelSelector?: null | string @go(LabelSelector,*string)
+        nodeIds?: [...int32] @go(NodeIds,[]int32)
+        observedGeneration?: null | int32 @go(ObservedGeneration,*int32)
+        replicas?:           null | int32 @go(Replicas,*int32)
+        roles?: [...KAFKANODEPOOLSTATUSROLESELEM.#x] @go(Roles,[]KafkaNodePoolStatusRolesElem)
+      }
+    }
+
+    //cue:path: "github.com/RedHatInsights/strimzi-client-go/apis/kafka.strimzi.io/v1beta2".#KafkaNodePoolStatusConditionsElem
+    let KAFKANODEPOOLSTATUSCONDITIONSELEM = {
+      #x: {
+        lastTransitionTime?: null | string @go(LastTransitionTime,*string)
+        message?:            null | string @go(Message,*string)
+        reason?:             null | string @go(Reason,*string)
+        status?:             null | string @go(Status,*string)
+        type?:               null | string @go(Type,*string)
+      }
+    }
+
+    //cue:path: "github.com/RedHatInsights/strimzi-client-go/apis/kafka.strimzi.io/v1beta2".#KafkaNodePoolStatusRolesElem
+    let KAFKANODEPOOLSTATUSROLESELEM = {
+      #x: _
+    }
+
+    //cue:path: "github.com/RedHatInsights/strimzi-client-go/apis/kafka.strimzi.io/v1beta2".#Kafka
+    let KAFKA = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x         @go(ObjectMeta)
+        spec?:     null | KAFKASPEC.#x   @go(Spec,*KafkaSpec)
+        status?:   null | KAFKASTATUS.#x @go(Status,*KafkaStatus)
+      }
+    }
+
+    //cue:path: "github.com/RedHatInsights/strimzi-client-go/apis/kafka.strimzi.io/v1beta2".#KafkaSpec
+    let KAFKASPEC = {
+      #x: _
+    }
+
+    //cue:path: "github.com/RedHatInsights/strimzi-client-go/apis/kafka.strimzi.io/v1beta2".#KafkaStatus
+    let KAFKASTATUS = {
+      #x: {
+        clusterId?: null | string @go(ClusterId,*string)
+        conditions?: [...KAFKASTATUSCONDITIONSELEM.#x] @go(Conditions,[]KafkaStatusConditionsElem)
+        kafkaMetadataState?:   null | KAFKASTATUSKAFKAMETADATASTATE.#x @go(KafkaMetadataState,*KafkaStatusKafkaMetadataState)
+        kafkaMetadataVersion?: null | string                           @go(KafkaMetadataVersion,*string)
+        kafkaNodePools?: [...KAFKASTATUSKAFKANODEPOOLSELEM.#x] @go(KafkaNodePools,[]KafkaStatusKafkaNodePoolsElem)
+        kafkaVersion?: null | string @go(KafkaVersion,*string)
+        listeners?: [...KAFKASTATUSLISTENERSELEM.#x] @go(Listeners,[]KafkaStatusListenersElem)
+        observedGeneration?:            null | int32  @go(ObservedGeneration,*int32)
+        operatorLastSuccessfulVersion?: null | string @go(OperatorLastSuccessfulVersion,*string)
+      }
+    }
+
+    //cue:path: "github.com/RedHatInsights/strimzi-client-go/apis/kafka.strimzi.io/v1beta2".#KafkaStatusConditionsElem
+    let KAFKASTATUSCONDITIONSELEM = {
+      #x: {
+        lastTransitionTime?: null | string @go(LastTransitionTime,*string)
+        message?:            null | string @go(Message,*string)
+        reason?:             null | string @go(Reason,*string)
+        status?:             null | string @go(Status,*string)
+        type?:               null | string @go(Type,*string)
+      }
+    }
+
+    //cue:path: "github.com/RedHatInsights/strimzi-client-go/apis/kafka.strimzi.io/v1beta2".#KafkaStatusKafkaMetadataState
+    let KAFKASTATUSKAFKAMETADATASTATE = {
+      #x: _
+    }
+
+    //cue:path: "github.com/RedHatInsights/strimzi-client-go/apis/kafka.strimzi.io/v1beta2".#KafkaStatusKafkaNodePoolsElem
+    let KAFKASTATUSKAFKANODEPOOLSELEM = {
+      #x: {
+        name?: null | string @go(Name,*string)
+      }
+    }
+
+    //cue:path: "github.com/RedHatInsights/strimzi-client-go/apis/kafka.strimzi.io/v1beta2".#KafkaStatusListenersElem
+    let KAFKASTATUSLISTENERSELEM = {
+      #x: {
+        addresses?: [...KAFKASTATUSLISTENERSELEMADDRESSESELEM.#x] @go(Addresses,[]KafkaStatusListenersElemAddressesElem)
+        bootstrapServers?: null | string @go(BootstrapServers,*string)
+        certificates?: [...string] @go(Certificates,[]string)
+        name?: null | string @go(Name,*string)
+        type?: null | string @go(Type,*string)
+      }
+    }
+
+    //cue:path: "github.com/RedHatInsights/strimzi-client-go/apis/kafka.strimzi.io/v1beta2".#KafkaStatusListenersElemAddressesElem
+    let KAFKASTATUSLISTENERSELEMADDRESSESELEM = {
+      #x: {
+        host?: null | string @go(Host,*string)
+        port?: null | int32  @go(Port,*int32)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ConfigMap
+    let CONFIGMAP = {
+      #x: {
+        TYPEMETA.#x
+        metadata?:  OBJECTMETA.#x @go(ObjectMeta) @protobuf(1,bytes,opt)
+        immutable?: null | bool   @go(Immutable,*bool) @protobuf(4,varint,opt)
+        data?: {
+          [string]: string
+        } @go(Data,map[string]string) @protobuf(2,bytes,rep)
+        binaryData?: {
+          [string]: bytes
+        } @go(BinaryData,map[string][]byte) @protobuf(3,bytes,rep)
+      }
+    }
+
+    //cue:path: "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1".#PodMonitor
+    let PODMONITOR = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x     @go(ObjectMeta)
+        spec:      PODMONITORSPEC.#x @go(Spec)
+      }
+    }
+
+    //cue:path: "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1".#PodMonitorSpec
+    let PODMONITORSPEC = {
+      #x: {
+        NATIVEHISTOGRAMCONFIG.#x
+        jobLabel?: string @go(JobLabel)
+        podTargetLabels?: [...string] @go(PodTargetLabels,[]string)
+        podMetricsEndpoints?: [...PODMETRICSENDPOINT.#x] @go(PodMetricsEndpoints,[]PodMetricsEndpoint)
+        selector:           LABELSELECTOR.#x            @go(Selector)
+        selectorMechanism?: null | SELECTORMECHANISM.#x @go(SelectorMechanism,*SelectorMechanism)
+        namespaceSelector?: NAMESPACESELECTOR_1.#x      @go(NamespaceSelector)
+        sampleLimit?:       null | uint64               @go(SampleLimit,*uint64)
+        targetLimit?:       null | uint64               @go(TargetLimit,*uint64)
+        scrapeProtocols?: [...SCRAPEPROTOCOL.#x] @go(ScrapeProtocols,[]ScrapeProtocol)
+        fallbackScrapeProtocol?: null | SCRAPEPROTOCOL.#x @go(FallbackScrapeProtocol,*ScrapeProtocol)
+        labelLimit?:             null | uint64            @go(LabelLimit,*uint64)
+        labelNameLengthLimit?:   null | uint64            @go(LabelNameLengthLimit,*uint64)
+        labelValueLengthLimit?:  null | uint64            @go(LabelValueLengthLimit,*uint64)
+        keepDroppedTargets?:     null | uint64            @go(KeepDroppedTargets,*uint64)
+        attachMetadata?:         null | ATTACHMETADATA.#x @go(AttachMetadata,*AttachMetadata)
+        scrapeClass?:            null | string            @go(ScrapeClassName,*string)
+        bodySizeLimit?:          null | BYTESIZE.#x       @go(BodySizeLimit,*ByteSize)
+      }
+    }
+
+    //cue:path: "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1".#PodMetricsEndpoint
+    let PODMETRICSENDPOINT = {
+      #x: {
+        port?:       null | string         @go(Port,*string)
+        portNumber?: null | int32          @go(PortNumber,*int32)
+        targetPort?: null | INTORSTRING.#x @go(TargetPort,*intstr.IntOrString)
+        path?:       string                @go(Path)
+        scheme?:     string                @go(Scheme)
+        params?: {
+          [string]: [...string]
+        } @go(Params,map[string][]string)
+        interval?:                 DURATION_1.#x               @go(Interval)
+        scrapeTimeout?:            DURATION_1.#x               @go(ScrapeTimeout)
+        tlsConfig?:                null | SAFETLSCONFIG.#x     @go(TLSConfig,*SafeTLSConfig)
+        bearerTokenSecret?:        SECRETKEYSELECTOR.#x        @go(BearerTokenSecret)
+        honorLabels?:              bool                        @go(HonorLabels)
+        honorTimestamps?:          null | bool                 @go(HonorTimestamps,*bool)
+        trackTimestampsStaleness?: null | bool                 @go(TrackTimestampsStaleness,*bool)
+        basicAuth?:                null | BASICAUTH.#x         @go(BasicAuth,*BasicAuth)
+        oauth2?:                   null | OAUTH2.#x            @go(OAuth2,*OAuth2)
+        authorization?:            null | SAFEAUTHORIZATION.#x @go(Authorization,*SafeAuthorization)
+        metricRelabelings?: [...RELABELCONFIG.#x] @go(MetricRelabelConfigs,[]RelabelConfig)
+        relabelings?: [...RELABELCONFIG.#x] @go(RelabelConfigs,[]RelabelConfig)
+        proxyUrl?:        null | string @go(ProxyURL,*string)
+        followRedirects?: null | bool   @go(FollowRedirects,*bool)
+        enableHttp2?:     null | bool   @go(EnableHttp2,*bool)
+        filterRunning?:   null | bool   @go(FilterRunning,*bool)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/util/intstr".#IntOrString
+    let INTORSTRING = {
+      #x: _
+    }
+
+    //cue:path: "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1".#Duration
+    let DURATION_1 = {
+      #x: string
+    }
+
+    //cue:path: "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1".#SafeTLSConfig
+    let SAFETLSCONFIG = {
+      #x: {
+        ca?:                 SECRETORCONFIGMAP.#x        @go(CA)
+        cert?:               SECRETORCONFIGMAP.#x        @go(Cert)
+        keySecret?:          null | SECRETKEYSELECTOR.#x @go(KeySecret,*v1.SecretKeySelector)
+        serverName?:         null | string               @go(ServerName,*string)
+        insecureSkipVerify?: null | bool                 @go(InsecureSkipVerify,*bool)
+        minVersion?:         null | TLSVERSION.#x        @go(MinVersion,*TLSVersion)
+        maxVersion?:         null | TLSVERSION.#x        @go(MaxVersion,*TLSVersion)
+      }
+    }
+
+    //cue:path: "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1".#SecretOrConfigMap
+    let SECRETORCONFIGMAP = {
+      #x: {
+        secret?:    null | SECRETKEYSELECTOR.#x    @go(Secret,*v1.SecretKeySelector)
+        configMap?: null | CONFIGMAPKEYSELECTOR.#x @go(ConfigMap,*v1.ConfigMapKeySelector)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#SecretKeySelector
+    let SECRETKEYSELECTOR = {
+      #x: {
+        LOCALOBJECTREFERENCE_1.#x
+        key:       string      @go(Key) @protobuf(2,bytes,opt)
+        optional?: null | bool @go(Optional,*bool) @protobuf(3,varint,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#LocalObjectReference
+    let LOCALOBJECTREFERENCE_1 = {
+      #x: {
+        name?: string @go(Name) @protobuf(1,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ConfigMapKeySelector
+    let CONFIGMAPKEYSELECTOR = {
+      #x: {
+        LOCALOBJECTREFERENCE_1.#x
+        key:       string      @go(Key) @protobuf(2,bytes,opt)
+        optional?: null | bool @go(Optional,*bool) @protobuf(3,varint,opt)
+      }
+    }
+
+    //cue:path: "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1".#TLSVersion
+    let TLSVERSION = {
+      #x: string
+    }
+
+    //cue:path: "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1".#BasicAuth
+    let BASICAUTH = {
+      #x: {
+        username?: SECRETKEYSELECTOR.#x @go(Username)
+        password?: SECRETKEYSELECTOR.#x @go(Password)
+      }
+    }
+
+    //cue:path: "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1".#OAuth2
+    let OAUTH2 = {
+      #x: {
+        PROXYCONFIG.#x
+        clientId:     SECRETORCONFIGMAP.#x @go(ClientID)
+        clientSecret: SECRETKEYSELECTOR.#x @go(ClientSecret)
+        tokenUrl:     string               @go(TokenURL)
+        scopes?: [...string] @go(Scopes,[]string)
+        endpointParams?: {
+          [string]: string
+        } @go(EndpointParams,map[string]string)
+        tlsConfig?: null | SAFETLSCONFIG.#x @go(TLSConfig,*SafeTLSConfig)
+      }
+    }
+
+    //cue:path: "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1".#ProxyConfig
+    let PROXYCONFIG = {
+      #x: {
+        proxyUrl?:             null | string @go(ProxyURL,*string)
+        noProxy?:              null | string @go(NoProxy,*string)
+        proxyFromEnvironment?: null | bool   @go(ProxyFromEnvironment,*bool)
+        proxyConnectHeader?: {
+          [string]: [...SECRETKEYSELECTOR.#x]
+        } @go(ProxyConnectHeader,map[string][]v1.SecretKeySelector)
+      }
+    }
+
+    //cue:path: "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1".#SafeAuthorization
+    let SAFEAUTHORIZATION = {
+      #x: {
+        type?:        string                      @go(Type)
+        credentials?: null | SECRETKEYSELECTOR.#x @go(Credentials,*v1.SecretKeySelector)
+      }
+    }
+
+    //cue:path: "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1".#RelabelConfig
+    let RELABELCONFIG = {
+      #x: {
+        sourceLabels?: [...LABELNAME.#x] @go(SourceLabels,[]LabelName)
+        separator?:   null | string @go(Separator,*string)
+        targetLabel?: string        @go(TargetLabel)
+        regex?:       string        @go(Regex)
+        modulus?:     uint64        @go(Modulus)
+        replacement?: null | string @go(Replacement,*string)
+        action?:      string        @go(Action)
+      }
+    }
+
+    //cue:path: "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1".#LabelName
+    let LABELNAME = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#LabelSelector
+    let LABELSELECTOR = {
+      #x: {
+        matchLabels?: {
+          [string]: string
+        } @go(MatchLabels,map[string]string) @protobuf(1,bytes,rep)
+        matchExpressions?: [...LABELSELECTORREQUIREMENT.#x] @go(MatchExpressions,[]LabelSelectorRequirement) @protobuf(2,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#LabelSelectorRequirement
+    let LABELSELECTORREQUIREMENT = {
+      #x: {
+        key:      string                   @go(Key) @protobuf(1,bytes,opt)
+        operator: LABELSELECTOROPERATOR.#x @go(Operator) @protobuf(2,bytes,opt,casttype=LabelSelectorOperator)
+        values?: [...string] @go(Values,[]string) @protobuf(3,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#LabelSelectorOperator
+    let LABELSELECTOROPERATOR = {
+      #x: string
+    }
+
+    //cue:path: "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1".#SelectorMechanism
+    let SELECTORMECHANISM = {
+      #x: string
+    }
+
+    //cue:path: "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1".#NamespaceSelector
+    let NAMESPACESELECTOR_1 = {
+      #x: {
+        any?: bool @go(Any)
+        matchNames?: [...string] @go(MatchNames,[]string)
+      }
+    }
+
+    //cue:path: "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1".#ScrapeProtocol
+    let SCRAPEPROTOCOL = {
+      #x: string
+    }
+
+    //cue:path: "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1".#NativeHistogramConfig
+    let NATIVEHISTOGRAMCONFIG = {
+      #x: {
+        scrapeClassicHistograms?:        null | bool        @go(ScrapeClassicHistograms,*bool)
+        nativeHistogramBucketLimit?:     null | uint64      @go(NativeHistogramBucketLimit,*uint64)
+        nativeHistogramMinBucketFactor?: null | QUANTITY.#x @go(NativeHistogramMinBucketFactor,*resource.Quantity)
+      }
+    }
+
+    //cue:path: "k8s.io/apimachinery/pkg/api/resource".#Quantity
+    let QUANTITY = {
+      #x: _
+    }
+
+    //cue:path: "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1".#AttachMetadata
+    let ATTACHMETADATA = {
+      #x: {
+        node?: null | bool @go(Node,*bool)
+      }
+    }
+
+    //cue:path: "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1".#ByteSize
+    let BYTESIZE = {
+      #x: string
+    }
+
+    let #Odd_1 = #Odd
   type: dockyards.io/cue
