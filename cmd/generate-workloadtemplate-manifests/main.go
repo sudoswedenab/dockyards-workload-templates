@@ -96,12 +96,7 @@ func (g *generator) walkDir(path string, dirEntry fs.DirEntry, err error) error 
 
 	output := filepath.Join(g.outpath, resource)
 
-	o, err := os.Create(output)
-	if err != nil {
-		return err
-	}
-
-	_, err = o.Write(b)
+	err = os.WriteFile(output, b, 0o666)
 	if err != nil {
 		return err
 	}
@@ -122,7 +117,7 @@ func main() {
 		outpath: outpath,
 	}
 
-	err := os.MkdirAll(outpath, 0755)
+	err := os.MkdirAll(outpath, 0o755)
 	if err != nil {
 		panic(err)
 	}
@@ -147,12 +142,7 @@ func main() {
 
 	filename := filepath.Join(outpath, "kustomization.yaml")
 
-	file, err := os.Create(filename)
-	if err != nil {
-		panic(err)
-	}
-
-	_, err = file.Write(b)
+	err = os.WriteFile(filename, b, 0o666)
 	if err != nil {
 		panic(err)
 	}
