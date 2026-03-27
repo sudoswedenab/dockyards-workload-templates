@@ -20,13 +20,19 @@ spec:
   source: |
     package template
 
-    import "strings"
+    import (
+      "encoding/yaml"
+      "strings"
+    )
 
     #Input: {
       chart!:      string
       repository!: =~"^(http?s|oci)://.*$"
       version!:    string
       values?: [string]: _
+      namespaceLabels: {
+        [key=string]: string
+      } | *{}
     }
     #cluster: {
       TYPEMETA.#x
@@ -81,6 +87,40 @@ spec:
     } & {
       spec: input: #Input
     }
+    _namespace: NAMESPACE.#x & {
+      apiVersion: "v1"
+      kind:       "Namespace"
+      metadata: {
+        name:   #workload.spec.targetNamespace
+        labels: #workload.spec.input.namespaceLabels
+      }
+    }
+    worktree: WORKTREE.#x & {
+      apiVersion: "dockyards.io/v1alpha3"
+      kind:       WORKTREEKIND.#x
+      metadata: {
+        name:      #workload.metadata.name
+        namespace: #workload.metadata.namespace
+      }
+      spec: files: "namespace.yaml": '\(yaml.Marshal(_namespace))'
+    }
+    kustomization: KUSTOMIZATION.#x & {
+      apiVersion: "kustomize.toolkit.fluxcd.io/v1"
+      kind:       KUSTOMIZATIONKIND.#x
+      metadata: {
+        name:      #workload.metadata.name
+        namespace: #workload.metadata.namespace
+      }
+      spec: {
+        interval: "5m"
+        kubeConfig: secretRef: name: #cluster.metadata.name + "-kubeconfig"
+        prune: true
+        sourceRef: {
+          kind: GITREPOSITORYKIND.#x
+          name: #workload.metadata.name
+        }
+      }
+    }
     helmRepository: HELMREPOSITORY.#x & {
       apiVersion: "source.toolkit.fluxcd.io/v1"
       kind:       HELMREPOSITORYKIND.#x
@@ -112,10 +152,7 @@ spec:
           }
           version: #workload.spec.input.version
         }
-        install: {
-          createNamespace: true
-          remediation: retries: -1
-        }
+        install: remediation: retries: -1
         interval: "5m"
         kubeConfig: secretRef: name: #cluster.metadata.name + "-kubeconfig"
         storageNamespace: #workload.spec.targetNamespace
@@ -251,6 +288,299 @@ spec:
       }
     }
 
+    //cue:path: "k8s.io/api/core/v1".#Namespace
+    let NAMESPACE = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x      @go(ObjectMeta) @protobuf(1,bytes,opt)
+        spec?:     NAMESPACESPEC.#x   @go(Spec) @protobuf(2,bytes,opt)
+        status?:   NAMESPACESTATUS.#x @go(Status) @protobuf(3,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#NamespaceSpec
+    let NAMESPACESPEC = {
+      #x: {
+        finalizers?: [...FINALIZERNAME.#x] @go(Finalizers,[]FinalizerName) @protobuf(1,bytes,rep,casttype=FinalizerName)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#FinalizerName
+    let FINALIZERNAME = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#NamespaceStatus
+    let NAMESPACESTATUS = {
+      #x: {
+        phase?: NAMESPACEPHASE.#x @go(Phase) @protobuf(1,bytes,opt,casttype=NamespacePhase)
+        conditions?: [...NAMESPACECONDITION.#x] @go(Conditions,[]NamespaceCondition) @protobuf(2,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#NamespacePhase
+    let NAMESPACEPHASE = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#NamespaceCondition
+    let NAMESPACECONDITION = {
+      #x: {
+        type:                NAMESPACECONDITIONTYPE.#x @go(Type) @protobuf(1,bytes,opt,casttype=NamespaceConditionType)
+        status:              CONDITIONSTATUS_1.#x      @go(Status) @protobuf(2,bytes,opt,casttype=ConditionStatus)
+        lastTransitionTime?: TIME.#x                   @go(LastTransitionTime) @protobuf(4,bytes,opt)
+        reason?:             string                    @go(Reason) @protobuf(5,bytes,opt)
+        message?:            string                    @go(Message) @protobuf(6,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#NamespaceConditionType
+    let NAMESPACECONDITIONTYPE = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#ConditionStatus
+    let CONDITIONSTATUS_1 = {
+      #x: string
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#Worktree
+    let WORKTREE = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x     @go(ObjectMeta)
+        spec?:     WORKTREESPEC.#x   @go(Spec)
+        status?:   WORKTREESTATUS.#x @go(Status)
+      }
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#WorktreeSpec
+    let WORKTREESPEC = {
+      #x: {
+        files?: {
+          [string]: bytes
+        } @go(Files,map[string][]byte)
+      }
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#WorktreeStatus
+    let WORKTREESTATUS = {
+      #x: {
+        conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition)
+        url?:           null | string @go(URL,*string)
+        referenceName?: null | string @go(ReferenceName,*string)
+        commitHash?:    null | string @go(CommitHash,*string)
+      }
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#WorktreeKind
+    let WORKTREEKIND = {
+      #x: "Worktree"
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#Kustomization
+    let KUSTOMIZATION = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x          @go(ObjectMeta)
+        spec?:     KUSTOMIZATIONSPEC.#x   @go(Spec)
+        status?:   KUSTOMIZATIONSTATUS.#x @go(Status)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#KustomizationSpec
+    let KUSTOMIZATIONSPEC = {
+      #x: {
+        commonMetadata?: null | COMMONMETADATA.#x @go(CommonMetadata,*CommonMetadata)
+        dependsOn?: [...NAMESPACEDOBJECTREFERENCE.#x] @go(DependsOn,[]meta.NamespacedObjectReference)
+        decryption?:    null | DECRYPTION.#x          @go(Decryption,*Decryption)
+        interval:       DURATION.#x                   @go(Interval)
+        retryInterval?: null | DURATION.#x            @go(RetryInterval,*metav1.Duration)
+        kubeConfig?:    null | KUBECONFIGREFERENCE.#x @go(KubeConfig,*meta.KubeConfigReference)
+        path?:          string                        @go(Path)
+        postBuild?:     null | POSTBUILD.#x           @go(PostBuild,*PostBuild)
+        prune:          bool                          @go(Prune)
+        healthChecks?: [...NAMESPACEDOBJECTKINDREFERENCE.#x] @go(HealthChecks,[]meta.NamespacedObjectKindReference)
+        namePrefix?: string @go(NamePrefix)
+        nameSuffix?: string @go(NameSuffix)
+        patches?: [...PATCH.#x] @go(Patches,[]kustomize.Patch)
+        images?: [...IMAGE.#x] @go(Images,[]kustomize.Image)
+        serviceAccountName?: string                           @go(ServiceAccountName)
+        sourceRef:           CROSSNAMESPACESOURCEREFERENCE.#x @go(SourceRef)
+        suspend?:            bool                             @go(Suspend)
+        targetNamespace?:    string                           @go(TargetNamespace)
+        timeout?:            null | DURATION.#x               @go(Timeout,*metav1.Duration)
+        force?:              bool                             @go(Force)
+        wait?:               bool                             @go(Wait)
+        components?: [...string] @go(Components,[]string)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#CommonMetadata
+    let COMMONMETADATA = {
+      #x: {
+        annotations?: {
+          [string]: string
+        } @go(Annotations,map[string]string)
+        labels?: {
+          [string]: string
+        } @go(Labels,map[string]string)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#NamespacedObjectReference
+    let NAMESPACEDOBJECTREFERENCE = {
+      #x: {
+        name:       string @go(Name)
+        namespace?: string @go(Namespace)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#Decryption
+    let DECRYPTION = {
+      #x: {
+        provider:   string                         @go(Provider)
+        secretRef?: null | LOCALOBJECTREFERENCE.#x @go(SecretRef,*meta.LocalObjectReference)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#LocalObjectReference
+    let LOCALOBJECTREFERENCE = {
+      #x: {
+        name: string @go(Name)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#KubeConfigReference
+    let KUBECONFIGREFERENCE = {
+      #x: {
+        configMapRef?: null | LOCALOBJECTREFERENCE.#x @go(ConfigMapRef,*LocalObjectReference)
+        secretRef?:    null | SECRETKEYREFERENCE.#x   @go(SecretRef,*SecretKeyReference)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#SecretKeyReference
+    let SECRETKEYREFERENCE = {
+      #x: {
+        name: string @go(Name)
+        key?: string @go(Key)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#PostBuild
+    let POSTBUILD = {
+      #x: {
+        substitute?: {
+          [string]: string
+        } @go(Substitute,map[string]string)
+        substituteFrom?: [...SUBSTITUTEREFERENCE.#x] @go(SubstituteFrom,[]SubstituteReference)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#SubstituteReference
+    let SUBSTITUTEREFERENCE = {
+      #x: {
+        kind:      string @go(Kind)
+        name:      string @go(Name)
+        optional?: bool   @go(Optional)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#NamespacedObjectKindReference
+    let NAMESPACEDOBJECTKINDREFERENCE = {
+      #x: {
+        apiVersion?: string @go(APIVersion)
+        kind:        string @go(Kind)
+        name:        string @go(Name)
+        namespace?:  string @go(Namespace)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/kustomize".#Patch
+    let PATCH = {
+      #x: {
+        patch:   string             @go(Patch)
+        target?: null | SELECTOR.#x @go(Target,*Selector)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/kustomize".#Selector
+    let SELECTOR = {
+      #x: {
+        group?:              string @go(Group)
+        version?:            string @go(Version)
+        kind?:               string @go(Kind)
+        namespace?:          string @go(Namespace)
+        name?:               string @go(Name)
+        annotationSelector?: string @go(AnnotationSelector)
+        labelSelector?:      string @go(LabelSelector)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/kustomize".#Image
+    let IMAGE = {
+      #x: {
+        name:     string @go(Name)
+        newName?: string @go(NewName)
+        newTag?:  string @go(NewTag)
+        digest?:  string @go(Digest)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#CrossNamespaceSourceReference
+    let CROSSNAMESPACESOURCEREFERENCE = {
+      #x: {
+        apiVersion?: string @go(APIVersion)
+        kind:        string @go(Kind)
+        name:        string @go(Name)
+        namespace?:  string @go(Namespace)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#KustomizationStatus
+    let KUSTOMIZATIONSTATUS = {
+      #x: {
+        RECONCILEREQUESTSTATUS.#x
+        observedGeneration?: int64 @go(ObservedGeneration)
+        conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition)
+        lastAppliedRevision?:   string                      @go(LastAppliedRevision)
+        lastAttemptedRevision?: string                      @go(LastAttemptedRevision)
+        inventory?:             null | RESOURCEINVENTORY.#x @go(Inventory,*ResourceInventory)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#ReconcileRequestStatus
+    let RECONCILEREQUESTSTATUS = {
+      #x: {
+        lastHandledReconcileAt?: string @go(LastHandledReconcileAt)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#ResourceInventory
+    let RESOURCEINVENTORY = {
+      #x: {
+        entries: [...RESOURCEREF.#x] @go(Entries,[]ResourceRef)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#ResourceRef
+    let RESOURCEREF = {
+      #x: {
+        id: string @go(ID)
+        v:  string @go(Version)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/kustomize-controller/api/v1".#KustomizationKind
+    let KUSTOMIZATIONKIND = {
+      #x: "Kustomization"
+    }
+
+    //cue:path: "github.com/fluxcd/source-controller/api/v1".#GitRepositoryKind
+    let GITREPOSITORYKIND = {
+      #x: "GitRepository"
+    }
+
     //cue:path: "github.com/fluxcd/source-controller/api/v1".#HelmRepository
     let HELMREPOSITORY = {
       #x: {
@@ -275,13 +605,6 @@ spec:
         accessFrom?:      null | ACCESSFROM.#x           @go(AccessFrom,*acl.AccessFrom)
         type?:            string                         @go(Type)
         provider?:        string                         @go(Provider)
-      }
-    }
-
-    //cue:path: "github.com/fluxcd/pkg/apis/meta".#LocalObjectReference
-    let LOCALOBJECTREFERENCE = {
-      #x: {
-        name: string @go(Name)
       }
     }
 
@@ -327,13 +650,6 @@ spec:
       }
     }
 
-    //cue:path: "github.com/fluxcd/pkg/apis/meta".#ReconcileRequestStatus
-    let RECONCILEREQUESTSTATUS = {
-      #x: {
-        lastHandledReconcileAt?: string @go(LastHandledReconcileAt)
-      }
-    }
-
     //cue:path: "github.com/fluxcd/source-controller/api/v1".#HelmRepositoryKind
     let HELMREPOSITORYKIND = {
       #x: "HelmRepository"
@@ -352,14 +668,14 @@ spec:
     //cue:path: "github.com/fluxcd/helm-controller/api/v2".#HelmReleaseSpec
     let HELMRELEASESPEC = {
       #x: {
-        chart?:            null | HELMCHARTTEMPLATE.#x             @go(Chart,*HelmChartTemplate)
-        chartRef?:         null | CROSSNAMESPACESOURCEREFERENCE.#x @go(ChartRef,*CrossNamespaceSourceReference)
-        interval:          DURATION.#x                             @go(Interval)
-        kubeConfig?:       null | KUBECONFIGREFERENCE.#x           @go(KubeConfig,*meta.KubeConfigReference)
-        suspend?:          bool                                    @go(Suspend)
-        releaseName?:      string                                  @go(ReleaseName)
-        targetNamespace?:  string                                  @go(TargetNamespace)
-        storageNamespace?: string                                  @go(StorageNamespace)
+        chart?:            null | HELMCHARTTEMPLATE.#x               @go(Chart,*HelmChartTemplate)
+        chartRef?:         null | CROSSNAMESPACESOURCEREFERENCE_1.#x @go(ChartRef,*CrossNamespaceSourceReference)
+        interval:          DURATION.#x                               @go(Interval)
+        kubeConfig?:       null | KUBECONFIGREFERENCE.#x             @go(KubeConfig,*meta.KubeConfigReference)
+        suspend?:          bool                                      @go(Suspend)
+        releaseName?:      string                                    @go(ReleaseName)
+        targetNamespace?:  string                                    @go(TargetNamespace)
+        storageNamespace?: string                                    @go(StorageNamespace)
         dependsOn?: [...NAMESPACEDOBJECTREFERENCE.#x] @go(DependsOn,[]meta.NamespacedObjectReference)
         timeout?:            null | DURATION.#x       @go(Timeout,*metav1.Duration)
         maxHistory?:         null | int               @go(MaxHistory,*int)
@@ -430,36 +746,12 @@ spec:
     }
 
     //cue:path: "github.com/fluxcd/helm-controller/api/v2".#CrossNamespaceSourceReference
-    let CROSSNAMESPACESOURCEREFERENCE = {
+    let CROSSNAMESPACESOURCEREFERENCE_1 = {
       #x: {
         apiVersion?: string @go(APIVersion)
         kind:        string @go(Kind)
         name:        string @go(Name)
         namespace?:  string @go(Namespace)
-      }
-    }
-
-    //cue:path: "github.com/fluxcd/pkg/apis/meta".#KubeConfigReference
-    let KUBECONFIGREFERENCE = {
-      #x: {
-        configMapRef?: null | LOCALOBJECTREFERENCE.#x @go(ConfigMapRef,*LocalObjectReference)
-        secretRef?:    null | SECRETKEYREFERENCE.#x   @go(SecretRef,*SecretKeyReference)
-      }
-    }
-
-    //cue:path: "github.com/fluxcd/pkg/apis/meta".#SecretKeyReference
-    let SECRETKEYREFERENCE = {
-      #x: {
-        name: string @go(Name)
-        key?: string @go(Key)
-      }
-    }
-
-    //cue:path: "github.com/fluxcd/pkg/apis/meta".#NamespacedObjectReference
-    let NAMESPACEDOBJECTREFERENCE = {
-      #x: {
-        name:       string @go(Name)
-        namespace?: string @go(Namespace)
       }
     }
 
@@ -481,19 +773,6 @@ spec:
       #x: {
         paths: [...string] @go(Paths,[]string)
         target?: null | SELECTOR.#x @go(Target,*kustomize.Selector)
-      }
-    }
-
-    //cue:path: "github.com/fluxcd/pkg/apis/kustomize".#Selector
-    let SELECTOR = {
-      #x: {
-        group?:              string @go(Group)
-        version?:            string @go(Version)
-        kind?:               string @go(Kind)
-        namespace?:          string @go(Namespace)
-        name?:               string @go(Name)
-        annotationSelector?: string @go(AnnotationSelector)
-        labelSelector?:      string @go(LabelSelector)
       }
     }
 
@@ -625,24 +904,6 @@ spec:
       #x: {
         patches?: [...PATCH.#x] @go(Patches,[]kustomize.Patch)
         images?: [...IMAGE.#x] @go(Images,[]kustomize.Image)
-      }
-    }
-
-    //cue:path: "github.com/fluxcd/pkg/apis/kustomize".#Patch
-    let PATCH = {
-      #x: {
-        patch:   string             @go(Patch)
-        target?: null | SELECTOR.#x @go(Target,*Selector)
-      }
-    }
-
-    //cue:path: "github.com/fluxcd/pkg/apis/kustomize".#Image
-    let IMAGE = {
-      #x: {
-        name:     string @go(Name)
-        newName?: string @go(NewName)
-        newTag?:  string @go(NewTag)
-        digest?:  string @go(Digest)
       }
     }
 
