@@ -10,6 +10,7 @@ import (
 	kustomize "sigs.k8s.io/kustomize/api/types"
 	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 )
 
 #Input: {
@@ -30,6 +31,88 @@ _namespace: corev1.#Namespace & {
 	apiVersion: "v1"
 	kind:       "Namespace"
 	metadata: name: #workload.spec.targetNamespace
+}
+
+_sourceSet: {
+	for s in #workload.spec.input.sources {
+		"\(s)": true
+	}
+}
+
+_ingressEnabled: _sourceSet["ingress"] != _|_
+
+_gatewayAPISourceNames: [
+	"gateway-httproute",
+	"gateway-tlsroute",
+	"gateway-tcproute",
+	"gateway-udproute",
+	"gateway-grpcroute",
+	"gateway-gateway",
+	"gateway",
+	"gatewayapi",
+	"gateway-api",
+	"httproute",
+	"httproutes",
+	"tlsroute",
+	"tlsroutes",
+	"tcproute",
+	"tcproutes",
+	"udproute",
+	"udproutes",
+]
+
+_gatewayAPIEnabled: [
+	for s in _gatewayAPISourceNames
+	if _sourceSet[s] != _|_ {
+		s
+	},
+] != []
+
+_clusterRole: rbacv1.#ClusterRole & {
+	apiVersion: "rbac.authorization.k8s.io/v1"
+	kind:       "ClusterRole"
+	metadata:
+		name: "external-dns"
+	rules: [
+		{
+			apiGroups: [""]
+			resources: ["endpoints", "pods", "services"]
+			verbs: ["get", "watch", "list"]
+		},
+		if _ingressEnabled {
+			{
+				apiGroups: ["extensions"]
+				resources: ["ingresses"]
+				verbs: ["get", "watch", "list"]
+			}
+		},
+		if _ingressEnabled {
+			{
+				apiGroups: ["networking.k8s.io"]
+				resources: ["ingresses"]
+				verbs: ["get", "watch", "list"]
+			}
+		},
+		{
+			apiGroups: [""]
+			resources: ["nodes"]
+			verbs: ["watch", "list"]
+		},
+		if _gatewayAPIEnabled {
+			{
+				apiGroups: [""]
+				resources: ["namespaces"]
+				verbs: ["get", "watch", "list"]
+			}
+		},
+		if _gatewayAPIEnabled {
+			{
+				apiGroups: ["gateway.networking.k8s.io"]
+				resources: ["gateways", "httproutes", "tlsroutes", "tcproutes", "udproutes"]
+				verbs: ["get", "watch", "list"]
+			}
+		},
+	]
 }
 
 _deployment: appsv1.#Deployment & {
@@ -94,7 +177,13 @@ _patches: [
 			kind: "Deployment"
 			name: "external-dns"
 		}
-
+	},
+	{
+		patch: "\(yaml.Marshal(_clusterRole))"
+		target: {
+			kind: "ClusterRole"
+			name: "external-dns"
+		}
 	},
 ]
 
