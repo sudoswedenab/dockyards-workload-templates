@@ -91,6 +91,52 @@ spec:
       kind:       "Namespace"
       metadata: name: #workload.spec.targetNamespace
     }
+    _sourceSet: {
+      for s in #workload.spec.input.sources {
+        "\(s)": true
+      }
+    }
+    _ingressEnabled:    _sourceSet["ingress"] != _|_              // explicit error (_|_ literal) in source
+                        || _sourceSet["service"] != _|_           // explicit error (_|_ literal) in source
+    _gatewayAPIEnabled: _sourceSet["gateway-httproute"] != _|_    // explicit error (_|_ literal) in source
+                        || _sourceSet["gateway-tlsroute"] != _|_  // explicit error (_|_ literal) in source
+                        || _sourceSet["gateway-tcproute"] != _|_  // explicit error (_|_ literal) in source
+                        || _sourceSet["gateway-udproute"] != _|_  // explicit error (_|_ literal) in source
+                        || _sourceSet["gateway-grpcroute"] != _|_ // explicit error (_|_ literal) in source
+    _clusterRole: CLUSTERROLE.#x & {
+      apiVersion: "rbac.authorization.k8s.io/v1"
+      kind:       "ClusterRole"
+      metadata: name: "external-dns"
+      rules: [{
+        apiGroups: [""]
+        resources: ["endpoints", "pods", "services"]
+        verbs: ["get", "watch", "list"]
+      },
+        if _ingressEnabled {
+          apiGroups: ["extensions"]
+          resources: ["ingresses"]
+          verbs: ["get", "watch", "list"]
+        },
+        if _ingressEnabled {
+          apiGroups: ["networking.k8s.io"]
+          resources: ["ingresses"]
+          verbs: ["get", "watch", "list"]
+        }, {
+          apiGroups: [""]
+          resources: ["nodes"]
+          verbs: ["watch", "list"]
+        },
+        if _gatewayAPIEnabled {
+          apiGroups: [""]
+          resources: ["namespaces"]
+          verbs: ["get", "watch", "list"]
+        },
+        if _gatewayAPIEnabled {
+          apiGroups: ["gateway.networking.k8s.io"]
+          resources: ["gateways", "httproutes", "tlsroutes", "tcproutes", "udproutes"]
+          verbs: ["get", "watch", "list"]
+        }]
+    }
     _deployment: DEPLOYMENT.#x & {
       apiVersion: "apps/v1"
       kind:       "Deployment"
@@ -137,6 +183,12 @@ spec:
       patch: "\(yaml.Marshal(_deployment))"
       target: {
         kind: "Deployment"
+        name: "external-dns"
+      }
+    }, {
+      patch: "\(yaml.Marshal(_clusterRole))"
+      target: {
+        kind: "ClusterRole"
         name: "external-dns"
       }
     }]
@@ -370,27 +422,31 @@ spec:
       #x: string
     }
 
-    //cue:path: "k8s.io/api/apps/v1".#Deployment
-    let DEPLOYMENT = {
+    //cue:path: "k8s.io/api/rbac/v1".#ClusterRole
+    let CLUSTERROLE = {
       #x: {
         TYPEMETA.#x
-        metadata?: OBJECTMETA.#x       @go(ObjectMeta) @protobuf(1,bytes,opt)
-        spec?:     DEPLOYMENTSPEC.#x   @go(Spec) @protobuf(2,bytes,opt)
-        status?:   DEPLOYMENTSTATUS.#x @go(Status) @protobuf(3,bytes,opt)
+        metadata?: OBJECTMETA.#x @go(ObjectMeta) @protobuf(1,bytes,opt)
+        rules?: [...POLICYRULE.#x] @go(Rules,[]PolicyRule) @protobuf(2,bytes,rep)
+        aggregationRule?: null | AGGREGATIONRULE.#x @go(AggregationRule,*AggregationRule) @protobuf(3,bytes,opt)
       }
     }
 
-    //cue:path: "k8s.io/api/apps/v1".#DeploymentSpec
-    let DEPLOYMENTSPEC = {
+    //cue:path: "k8s.io/api/rbac/v1".#PolicyRule
+    let POLICYRULE = {
       #x: {
-        replicas?:                null | int32            @go(Replicas,*int32) @protobuf(1,varint,opt)
-        selector?:                null | LABELSELECTOR.#x @go(Selector,*metav1.LabelSelector) @protobuf(2,bytes,opt)
-        template:                 PODTEMPLATESPEC.#x      @go(Template) @protobuf(3,bytes,opt)
-        strategy?:                DEPLOYMENTSTRATEGY.#x   @go(Strategy) @protobuf(4,bytes,opt)
-        minReadySeconds?:         int32                   @go(MinReadySeconds) @protobuf(5,varint,opt)
-        revisionHistoryLimit?:    null | int32            @go(RevisionHistoryLimit,*int32) @protobuf(6,varint,opt)
-        paused?:                  bool                    @go(Paused) @protobuf(7,varint,opt)
-        progressDeadlineSeconds?: null | int32            @go(ProgressDeadlineSeconds,*int32) @protobuf(9,varint,opt)
+        verbs: [...string] @go(Verbs,[]string) @protobuf(1,bytes,rep)
+        apiGroups?: [...string] @go(APIGroups,[]string) @protobuf(2,bytes,rep)
+        resources?: [...string] @go(Resources,[]string) @protobuf(3,bytes,rep)
+        resourceNames?: [...string] @go(ResourceNames,[]string) @protobuf(4,bytes,rep)
+        nonResourceURLs?: [...string] @go(NonResourceURLs,[]string) @protobuf(5,bytes,rep)
+      }
+    }
+
+    //cue:path: "k8s.io/api/rbac/v1".#AggregationRule
+    let AGGREGATIONRULE = {
+      #x: {
+        clusterRoleSelectors?: [...LABELSELECTOR.#x] @go(ClusterRoleSelectors,[]metav1.LabelSelector) @protobuf(1,bytes,rep)
       }
     }
 
@@ -416,6 +472,30 @@ spec:
     //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#LabelSelectorOperator
     let LABELSELECTOROPERATOR = {
       #x: string
+    }
+
+    //cue:path: "k8s.io/api/apps/v1".#Deployment
+    let DEPLOYMENT = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x       @go(ObjectMeta) @protobuf(1,bytes,opt)
+        spec?:     DEPLOYMENTSPEC.#x   @go(Spec) @protobuf(2,bytes,opt)
+        status?:   DEPLOYMENTSTATUS.#x @go(Status) @protobuf(3,bytes,opt)
+      }
+    }
+
+    //cue:path: "k8s.io/api/apps/v1".#DeploymentSpec
+    let DEPLOYMENTSPEC = {
+      #x: {
+        replicas?:                null | int32            @go(Replicas,*int32) @protobuf(1,varint,opt)
+        selector?:                null | LABELSELECTOR.#x @go(Selector,*metav1.LabelSelector) @protobuf(2,bytes,opt)
+        template:                 PODTEMPLATESPEC.#x      @go(Template) @protobuf(3,bytes,opt)
+        strategy?:                DEPLOYMENTSTRATEGY.#x   @go(Strategy) @protobuf(4,bytes,opt)
+        minReadySeconds?:         int32                   @go(MinReadySeconds) @protobuf(5,varint,opt)
+        revisionHistoryLimit?:    null | int32            @go(RevisionHistoryLimit,*int32) @protobuf(6,varint,opt)
+        paused?:                  bool                    @go(Paused) @protobuf(7,varint,opt)
+        progressDeadlineSeconds?: null | int32            @go(ProgressDeadlineSeconds,*int32) @protobuf(9,varint,opt)
+      }
     }
 
     //cue:path: "k8s.io/api/core/v1".#PodTemplateSpec
