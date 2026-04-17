@@ -6,7 +6,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	antreav1 "antrea.io/antrea/pkg/apis/crd/v1beta1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
 	helmv2 "github.com/fluxcd/helm-controller/api/v2"
 	dockyardsv1 "github.com/sudoswedenab/dockyards-backend/api/v1alpha3"
@@ -40,6 +39,7 @@ import (
 	chart:      string | *"antrea"
 	repository: string & =~"^(http?s|oci)://.*$" | *"https://charts.antrea.io"
 	version:    string | *"2.5.0"
+	values?: [string]: _
 	agentFeatureGates: {[key=string]: bool} | *{}
 	controllerFeatureGates: {[key=string]: bool} | *{}
 	externalIPPools: [...#ExternalIPPool] | *[]
@@ -201,13 +201,6 @@ helmRepository: sourcev1.#HelmRepository & {
 	}
 }
 
-_values: apiextensionsv1.#JSON & {
-	agent: {
-		dontLoadKernelModules: true
-		installCNI: securityContext: capabilities: []
-	}
-}
-
 helmRelease: helmv2.#HelmRelease & {
 	apiVersion: "helm.toolkit.fluxcd.io/v2"
 	kind:       helmv2.#HelmReleaseKind
@@ -229,6 +222,8 @@ helmRelease: helmv2.#HelmRelease & {
 		kubeConfig: secretRef: name: #cluster.metadata.name + "-kubeconfig"
 		storageNamespace: #workload.spec.targetNamespace
 		targetNamespace:  #workload.spec.targetNamespace
-		values:           _values
+		if #workload.spec.input.values != _|_ {
+			values: #workload.spec.input.values
+		}
 	}
 }

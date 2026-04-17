@@ -49,6 +49,7 @@ spec:
       chart:      string | *"antrea"
       repository: string & =~"^(http?s|oci)://.*$" | *"https://charts.antrea.io"
       version:    string | *"2.5.0"
+      values?: [string]: _
       agentFeatureGates: {
         [key=string]: bool
       } | *{}
@@ -250,12 +251,6 @@ spec:
         }
       }
     }
-    _values: JSON.#x & {
-      agent: {
-        dontLoadKernelModules: true
-        installCNI: securityContext: capabilities: []
-      }
-    }
     helmRelease: HELMRELEASE.#x & {
       apiVersion: "helm.toolkit.fluxcd.io/v2"
       kind:       HELMRELEASEKIND.#x
@@ -277,7 +272,10 @@ spec:
         kubeConfig: secretRef: name: #cluster.metadata.name + "-kubeconfig"
         storageNamespace: #workload.spec.targetNamespace
         targetNamespace:  #workload.spec.targetNamespace
-        values:           _values
+        if #workload.spec.input.values != _|_ // explicit error (_|_ literal) in source
+        {
+          values: #workload.spec.input.values
+        }
       }
     }
 
