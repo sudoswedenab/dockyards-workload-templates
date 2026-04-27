@@ -33,3 +33,4 @@ resources:
 - workloadtemplate_promtail.yaml
 - workloadtemplate_rbac.yaml
 - workloadtemplate_strimzikafka.yaml
+- workloadtemplate_traefik.yaml
