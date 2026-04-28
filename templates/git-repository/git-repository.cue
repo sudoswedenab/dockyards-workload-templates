@@ -105,19 +105,29 @@ gitRepository: sourcev1.#GitRepository & {
 		namespace: #workload.metadata.namespace
 	}
 	spec: {
-		url:               #workload.spec.input.url
-		provider:          #workload.spec.input.provider
-		interval:          #workload.spec.input.interval
-		timeout:           #workload.spec.input.timeout
+		url:      #workload.spec.input.url
+		provider: #workload.spec.input.provider
+		interval: #workload.spec.input.interval
+		if #workload.spec.input.timeout != _|_ {
+			timeout: #workload.spec.input.timeout
+		}
 		recurseSubmodules: #workload.spec.input.recurseSubmodules
-		sparseCheckout:    #workload.spec.input.sparseCheckout
+		if #workload.spec.input.sparseCheckout != _|_ {
+			sparseCheckout: #workload.spec.input.sparseCheckout
+		}
 		ref: {
 			#workload.spec.input.ref
 		}
 
-		secretRef:          #workload.spec.input.secretRef
-		proxySecretRef:     #workload.spec.input.proxySecretRef
-		serviceAccountName: #workload.spec.input.serviceAccountName
+		if #workload.spec.input.secretRef != _|_ {
+			secretRef: #workload.spec.input.secretRef
+		}
+		if #workload.spec.input.proxySecretRef != _|_ {
+			proxySecretRef: #workload.spec.input.proxySecretRef
+		}
+		if #workload.spec.input.serviceAccountName != _|_ {
+			serviceAccountName: #workload.spec.input.serviceAccountName
+		}
 	}
 }
 
@@ -137,7 +147,9 @@ kustomization: kustomizev1.#Kustomization & {
 			]
 		}
 		interval: #workload.spec.input.interval
-		timeout:  #workload.spec.input.timeout
+		if #workload.spec.input.timeout != _|_ {
+			timeout: #workload.spec.input.timeout
+		}
 		kubeConfig: secretRef: name: #cluster.metadata.name + "-kubeconfig"
 		prune:         true
 		path:          #workload.spec.input.path
