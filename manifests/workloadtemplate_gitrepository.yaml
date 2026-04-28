@@ -148,7 +148,6 @@ spec:
           kind: gitRepository.kind
           name: gitRepository.metadata.name
         }
-        targetNamespace: #workload.spec.targetNamespace
       }
     }
 
