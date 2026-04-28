@@ -158,6 +158,5 @@ kustomization: kustomizev1.#Kustomization & {
 			kind: gitRepository.kind
 			name: gitRepository.metadata.name
 		}
-		targetNamespace: #workload.spec.targetNamespace
 	}
 }
