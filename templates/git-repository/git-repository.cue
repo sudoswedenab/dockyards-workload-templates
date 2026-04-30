@@ -61,7 +61,7 @@ import (
 #workload: dockyardsv1.#Workload
 #workload: spec: input: #Input
 
-if #workload.spec.input.createNamespace == true {
+if #workload.spec.input.createNamespace {
 	_namespace: corev1.#Namespace & {
 		apiVersion: "v1"
 		kind:       "Namespace"
@@ -139,7 +139,7 @@ kustomization: kustomizev1.#Kustomization & {
 		namespace: #workload.metadata.namespace
 	}
 	spec: {
-		if #workload.spec.input.createNamespace == true {
+		if #workload.spec.input.createNamespace {
 			dependsOn: [
 				{
 					name: #workload.metadata.name + "-namespace"
@@ -157,6 +157,9 @@ kustomization: kustomizev1.#Kustomization & {
 		sourceRef: {
 			kind: gitRepository.kind
 			name: gitRepository.metadata.name
+		}
+		if #workload.spec.input.createNamespace {
+			targetNamespace: #workload.spec.targetNamespace
 		}
 	}
 }
