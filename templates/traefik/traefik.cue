@@ -137,6 +137,11 @@ helmRelease: helmv2.#HelmRelease & {
 			remediation: retries: -1
 			skipCRDs: #workload.spec.input.skipDefaultCRDs
 		}
+		if #workload.spec.input.skipDefaultCRDs {
+			upgrade: {
+				crds: "Skip"
+			}
+		}
 		interval: "5m"
 		kubeConfig: {
 			secretRef: name: #cluster.metadata.name + "-kubeconfig"
