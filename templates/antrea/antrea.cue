@@ -13,8 +13,10 @@ import (
 )
 
 #ExternalIPPool: {
-	name: string
-	cidr: string
+	name:   string
+	cidr?:  string
+	start?: string
+	end?:   string
 	nodeSelectorLabels: {[key= string]: string}
 }
 
@@ -102,7 +104,9 @@ _externalIPPoolList: [
 		spec: {
 			ipRanges: [
 				{
-					cidr: externalIPPool.cidr
+					cidr:  externalIPPool.cidr
+					start: externalIPPool.start
+					end:   externalIPPool.end
 				},
 			]
 			nodeSelector: matchLabels: {

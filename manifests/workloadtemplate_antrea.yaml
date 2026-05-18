@@ -26,8 +26,10 @@ spec:
     )
 
     #ExternalIPPool: {
-      name: string
-      cidr: string
+      name:   string
+      cidr?:  string
+      start?: string
+      end?:   string
       nodeSelectorLabels: [key=string]: string
     }
     #bgpPolicy: {
@@ -159,7 +161,9 @@ spec:
         metadata: name: externalIPPool.name
         spec: {
           ipRanges: [{
-            cidr: externalIPPool.cidr
+            cidr:  externalIPPool.cidr
+            start: externalIPPool.start
+            end:   externalIPPool.end
           }]
           nodeSelector: matchLabels: {
             for k, v in externalIPPool.nodeSelectorLabels {
