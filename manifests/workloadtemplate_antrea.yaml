@@ -42,12 +42,12 @@ spec:
     #bgpPolicy: {
       name: string
       bgpPeers: [...#bgpPeer]
-      listenPort: int
-      localASN:   int
+      listenPort:      int
+      localASN:        int
+      advertisements?: _
       nodeSelectorLabels: [key=string]: string
     }
     #bgpPeer: {
-      name:                       string
       address:                    string
       asn:                        int
       gracefulRestartTimeSeconds: int
@@ -66,7 +66,7 @@ spec:
         [key=string]: bool
       } | *{}
       externalIPPools: [...#ExternalIPPool] | *[]
-      BGPPolicies: [...#bgpPolicy] | *[]
+      bgpPolicies: [...#bgpPolicy] | *[]
     }
     #cluster: {
       TYPEMETA.#x
@@ -189,14 +189,21 @@ spec:
         }
       }]
     _bgpPolicyList: [
-      for bgpPolicy in #workload.spec.input.BGPPolicies {
-        apiVersion: "crd.antrea.io/v1beta1"
+      for bgpPolicy in #workload.spec.input.bgpPolicies {
+        apiVersion: "crd.antrea.io/v1alpha1"
         kind:       "BGPPolicy"
         metadata: name: bgpPolicy.name
         spec: {
-          advertisements: {
-            egress: {}
-            service: ipTypes: ["LoadBalancerIP"]
+          if bgpPolicy.advertisements != _|_ // explicit error (_|_ literal) in source
+          {
+            advertisements: bgpPolicy.advertisements
+          }
+          if bgpPolicy.advertisements == _|_ // explicit error (_|_ literal) in source
+          {
+            advertisements: {
+              egress: {}
+              service: ipTypes: ["LoadBalancerIP"]
+            }
           }
           bgpPeers:   bgpPolicy.bgpPeers
           listenPort: bgpPolicy.listenPort

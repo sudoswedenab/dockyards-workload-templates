@@ -13,7 +13,7 @@ import (
 )
 
 #ExternalIPPoolRange: {
-	cidr: string
+	cidr:   string
 	start?: _|_
 	end?:   _|_
 } | {
@@ -23,7 +23,7 @@ import (
 }
 
 #ExternalIPPool: {
-	name:                string
+	name: string
 	#ExternalIPPoolRange
 	nodeSelectorLabels: {[key= string]: string}
 }
@@ -31,13 +31,13 @@ import (
 #bgpPolicy: {
 	name: string
 	bgpPeers: [...#bgpPeer]
-	listenPort: int
-	localASN:   int
+	listenPort:      int
+	localASN:        int
+	advertisements?: _
 	nodeSelectorLabels: {[key=string]: string}
 }
 
 #bgpPeer: {
-	name:                       string
 	address:                    string
 	asn:                        int
 	gracefulRestartTimeSeconds: int
@@ -53,7 +53,7 @@ import (
 	agentFeatureGates: {[key=string]: bool} | *{}
 	controllerFeatureGates: {[key=string]: bool} | *{}
 	externalIPPools: [...#ExternalIPPool] | *[]
-	BGPPolicies: [...#bgpPolicy] | *[]
+	bgpPolicies: [...#bgpPolicy] | *[]
 }
 
 #cluster: dockyardsv1.#Cluster
@@ -133,16 +133,21 @@ _externalIPPoolList: [
 ]
 
 _bgpPolicyList: [
-	for bgpPolicy in #workload.spec.input.BGPPolicies {
+	for bgpPolicy in #workload.spec.input.bgpPolicies {
 		// using a generic list as the published antrea module
 		// does not include bgpPolicy at the time of writing
-		apiVersion: "crd.antrea.io/v1beta1"
+		apiVersion: "crd.antrea.io/v1alpha1"
 		kind:       "BGPPolicy"
 		metadata: name: bgpPolicy.name
 		spec: {
-			advertisements: {
-				egress: {}
-				service: ipTypes: ["LoadBalancerIP"]
+			if bgpPolicy.advertisements != _|_ {
+				advertisements: bgpPolicy.advertisements
+			}
+			if bgpPolicy.advertisements == _|_ {
+				advertisements: {
+					egress: {}
+					service: ipTypes: ["LoadBalancerIP"]
+				}
 			}
 			bgpPeers:   bgpPolicy.bgpPeers
 			listenPort: bgpPolicy.listenPort
