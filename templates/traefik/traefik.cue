@@ -20,14 +20,20 @@ import (
 	type:    #gatewayAPITypes | *"experimental"
 }
 
+#traefikCRD: {
+	install: bool | *false
+	tag:     string | *"v3.6.12"
+}
+
 #Input: {
 	chart!:      string
 	repository!: string & =~"^(http?s|oci)://.*$"
 	version!:    string
 	values?: [string]: _
 	namespaceLabels: {[key=string]: string} | *{}
-	gatewayAPICRD: #gatewayAPICRD
-	skipCRDs:      bool | *false
+	gatewayAPICRD:   #gatewayAPICRD
+	traefikCRD:      #traefikCRD
+	skipDefaultCRDs: bool | *false
 }
 
 #cluster: dockyardsv1.#Cluster
@@ -46,11 +52,16 @@ _namespace: corev1.#Namespace & {
 
 _gatewayAPICRDs: "github.com/kubernetes-sigs/gateway-api/config/crd/" + #workload.spec.input.gatewayAPICRD.type + "?ref=" + #workload.spec.input.gatewayAPICRD.tag
 
+_traefikCRDs: "https://raw.githubusercontent.com/traefik/traefik/" + #workload.spec.input.traefikCRD.tag + "/docs/content/reference/dynamic-configuration/kubernetes-crd-definition-v1.yml"
+
 _kustomization: kustomize.#Kustomization & {
 	resources: [
 		"namespace.yaml",
 		if #workload.spec.input.gatewayAPICRD.install {
 			_gatewayAPICRDs
+		},
+		if #workload.spec.input.traefikCRD.install {
+			_traefikCRDs
 		},
 	]
 }
@@ -124,7 +135,7 @@ helmRelease: helmv2.#HelmRelease & {
 		}
 		install: {
 			remediation: retries: -1
-			skipCRDs: #workload.spec.input.skipCRDs
+			skipCRDs: #workload.spec.input.skipDefaultCRDs
 		}
 		interval: "5m"
 		kubeConfig: {
