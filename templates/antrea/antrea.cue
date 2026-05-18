@@ -12,11 +12,19 @@ import (
 	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
 )
 
+#ExternalIPPoolRange: {
+	cidr: string
+	start?: _|_
+	end?:   _|_
+} | {
+	cidr?: _|_
+	start: string
+	end:   string
+}
+
 #ExternalIPPool: {
-	name:   string
-	cidr?:  string
-	start?: string
-	end?:   string
+	name:                string
+	#ExternalIPPoolRange
 	nodeSelectorLabels: {[key= string]: string}
 }
 
@@ -104,9 +112,15 @@ _externalIPPoolList: [
 		spec: {
 			ipRanges: [
 				{
-					cidr:  externalIPPool.cidr
-					start: externalIPPool.start
-					end:   externalIPPool.end
+					if externalIPPool.cidr != _|_ {
+						cidr: externalIPPool.cidr
+					}
+					if externalIPPool.start != _|_ {
+						start: externalIPPool.start
+					}
+					if externalIPPool.end != _|_ {
+						end: externalIPPool.end
+					}
 				},
 			]
 			nodeSelector: matchLabels: {

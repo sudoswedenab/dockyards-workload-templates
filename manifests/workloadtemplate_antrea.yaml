@@ -25,11 +25,18 @@ spec:
       "strings"
     )
 
+    #ExternalIPPoolRange: {
+      cidr:   string
+      start?: _|_ // explicit error (_|_ literal) in source
+      end?:   _|_ // explicit error (_|_ literal) in source
+    } | {
+      cidr?: _|_ // explicit error (_|_ literal) in source
+      start: string
+      end:   string
+    }
     #ExternalIPPool: {
-      name:   string
-      cidr?:  string
-      start?: string
-      end?:   string
+      #ExternalIPPoolRange
+      name: string
       nodeSelectorLabels: [key=string]: string
     }
     #bgpPolicy: {
@@ -161,9 +168,18 @@ spec:
         metadata: name: externalIPPool.name
         spec: {
           ipRanges: [{
-            cidr:  externalIPPool.cidr
-            start: externalIPPool.start
-            end:   externalIPPool.end
+            if externalIPPool.cidr != _|_ // explicit error (_|_ literal) in source
+            {
+              cidr: externalIPPool.cidr
+            }
+            if externalIPPool.start != _|_ // explicit error (_|_ literal) in source
+            {
+              start: externalIPPool.start
+            }
+            if externalIPPool.end != _|_ // explicit error (_|_ literal) in source
+            {
+              end: externalIPPool.end
+            }
           }]
           nodeSelector: matchLabels: {
             for k, v in externalIPPool.nodeSelectorLabels {
