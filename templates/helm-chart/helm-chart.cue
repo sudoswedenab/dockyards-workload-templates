@@ -46,7 +46,7 @@ _namespace: corev1.#Namespace & {
 _manifestFiles: {
 	"namespace.yaml": '\(yaml.Marshal(_namespace))'
 	for filename, contents in #workload.spec.input.additionalResources {
-		"\(filename)": contents
+		"\(filename)": '\(contents)'
 	}
 }
 
