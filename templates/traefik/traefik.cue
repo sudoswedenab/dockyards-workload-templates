@@ -64,6 +64,22 @@ _kustomization: kustomize.#Kustomization & {
 			_traefikCRDs
 		},
 	]
+	if #workload.spec.input.gatewayAPICRD.install || #workload.spec.input.traefikCRD.install {
+		patches: [{
+			target: {
+				group:   "apiextensions.k8s.io"
+				version: "v1"
+				kind:    "CustomResourceDefinition"
+			}
+			patch: """
+				apiVersion: apiextensions.k8s.io/v1
+				kind: CustomResourceDefinition
+				metadata:
+				  annotations:
+				    kustomize.toolkit.fluxcd.io/ssa: IfNotPresent
+				"""
+		}]
+	}
 }
 
 worktree: dockyardsv1.#Worktree & {
