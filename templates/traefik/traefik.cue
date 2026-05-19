@@ -34,6 +34,13 @@ import (
 	gatewayAPICRD:   #gatewayAPICRD
 	traefikCRD:      #traefikCRD
 	skipDefaultCRDs: bool | *false
+
+	// Extra manifests to apply in the same workload. Values are raw YAML.
+	additionalResources: {
+		[filename=string]: string
+		"namespace.yaml"?:     _|_
+		"kustomization.yaml"?: _|_
+	} | *{}
 }
 
 #cluster: dockyardsv1.#Cluster
@@ -54,6 +61,13 @@ _gatewayAPICRDs: "github.com/kubernetes-sigs/gateway-api/config/crd/" + #workloa
 
 _traefikCRDs: "https://raw.githubusercontent.com/traefik/traefik/" + #workload.spec.input.traefikCRD.tag + "/docs/content/reference/dynamic-configuration/kubernetes-crd-definition-v1.yml"
 
+_manifestFiles: {
+	"namespace.yaml": '\(yaml.Marshal(_namespace))'
+	for filename, contents in #workload.spec.input.additionalResources {
+		"\(filename)": '\(contents)'
+	}
+}
+
 _kustomization: kustomize.#Kustomization & {
 	resources: [
 		"namespace.yaml",
@@ -62,6 +76,9 @@ _kustomization: kustomize.#Kustomization & {
 		},
 		if #workload.spec.input.traefikCRD.install {
 			_traefikCRDs
+		},
+		for filename, _ in #workload.spec.input.additionalResources {
+			"\(filename)"
 		},
 	]
 	if #workload.spec.input.gatewayAPICRD.install || #workload.spec.input.traefikCRD.install {
@@ -89,8 +106,10 @@ worktree: dockyardsv1.#Worktree & {
 	}
 	spec: {
 		files: {
-			"namespace.yaml":     '\(yaml.Marshal(_namespace))'
 			"kustomization.yaml": '\(yaml.Marshal(_kustomization))'
+			for filename, contents in _manifestFiles {
+				"\(filename)": contents
+			}
 		}
 	}
 }
