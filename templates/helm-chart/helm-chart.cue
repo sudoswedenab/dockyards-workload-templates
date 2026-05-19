@@ -8,6 +8,7 @@ import (
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
 	helmv2 "github.com/fluxcd/helm-controller/api/v2"
 	dockyardsv1 "github.com/sudoswedenab/dockyards-backend/api/v1alpha3"
+	kustomize "sigs.k8s.io/kustomize/api/types"
 	kustomizev1 "github.com/fluxcd/kustomize-controller/api/v1"
 )
 
@@ -17,6 +18,15 @@ import (
 	version!:    string
 	values?: [string]: _
 	namespaceLabels: {[key=string]: string} | *{}
+
+	// Extra manifests to apply in the same workload (e.g. SealedSecret,
+	// CRs for the chart, StorageClass). Values are raw YAML.
+	// Names that would overlap with internal naming are nulled
+	additionalResources: {
+		[filename=string]:     string
+		"namespace.yaml"?:     _|_
+		"kustomization.yaml"?: _|_
+	} | *{}
 }
 
 #cluster: dockyardsv1.#Cluster
@@ -33,6 +43,22 @@ _namespace: corev1.#Namespace & {
 	}
 }
 
+_manifestFiles: {
+	"namespace.yaml": '\(yaml.Marshal(_namespace))'
+	for filename, contents in #workload.spec.input.additionalResources {
+		"\(filename)": contents
+	}
+}
+
+_kustomization: kustomize.#Kustomization & {
+	resources: [
+		"namespace.yaml",
+		for filename, _ in #workload.spec.input.additionalResources {
+			"\(filename)"
+		},
+	]
+}
+
 worktree: dockyardsv1.#Worktree & {
 	apiVersion: "dockyards.io/v1alpha3"
 	kind:       dockyardsv1.#WorktreeKind
@@ -42,7 +68,10 @@ worktree: dockyardsv1.#Worktree & {
 	}
 	spec: {
 		files: {
-			"namespace.yaml": '\(yaml.Marshal(_namespace))'
+			"kustomization.yaml": '\(yaml.Marshal(_kustomization))'
+			for filename, contents in _manifestFiles {
+				"\(filename)": contents
+			}
 		}
 	}
 }
