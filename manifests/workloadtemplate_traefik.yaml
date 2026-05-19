@@ -46,6 +46,11 @@ spec:
       gatewayAPICRD:   #gatewayAPICRD
       traefikCRD:      #traefikCRD
       skipDefaultCRDs: bool | *false
+      additionalResources: {
+        [filename=string]:     string
+        "namespace.yaml"?:     _|_ // explicit error (_|_ literal) in source
+        "kustomization.yaml"?: _|_ // explicit error (_|_ literal) in source
+      } | *{}
     }
     #cluster: {
       TYPEMETA.#x
@@ -110,6 +115,12 @@ spec:
     }
     _gatewayAPICRDs: "github.com/kubernetes-sigs/gateway-api/config/crd/" + #workload.spec.input.gatewayAPICRD.type + "?ref=" + #workload.spec.input.gatewayAPICRD.tag
     _traefikCRDs:    "https://raw.githubusercontent.com/traefik/traefik/" + #workload.spec.input.traefikCRD.tag + "/docs/content/reference/dynamic-configuration/kubernetes-crd-definition-v1.yml"
+    _manifestFiles: {
+      "namespace.yaml": '\(yaml.Marshal(_namespace))'
+      for filename, contents in #workload.spec.input.additionalResources {
+        "\(filename)": '\(contents)'
+      }
+    }
     _kustomization: KUSTOMIZATION.#x & {
       {
         resources: ["namespace.yaml",
@@ -118,6 +129,9 @@ spec:
           },
           if #workload.spec.input.traefikCRD.install {
             _traefikCRDs
+          },
+          for filename, _ in #workload.spec.input.additionalResources {
+            "\(filename)"
           }]
         if #workload.spec.input.gatewayAPICRD.install || #workload.spec.input.traefikCRD.install {
           patches: [{
@@ -143,8 +157,10 @@ spec:
         namespace: #workload.metadata.namespace
       }
       spec: files: {
-        "namespace.yaml":     '\(yaml.Marshal(_namespace))'
         "kustomization.yaml": '\(yaml.Marshal(_kustomization))'
+        for filename, contents in _manifestFiles {
+          "\(filename)": contents
+        }
       }
     }
     kustomization: KUSTOMIZATION_1.#x & {
