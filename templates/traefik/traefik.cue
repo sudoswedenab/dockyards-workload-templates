@@ -72,11 +72,9 @@ _kustomization: kustomize.#Kustomization & {
 				kind:    "CustomResourceDefinition"
 			}
 			patch: """
-				apiVersion: apiextensions.k8s.io/v1
-				kind: CustomResourceDefinition
-				metadata:
-				  annotations:
-				    kustomize.toolkit.fluxcd.io/ssa: IfNotPresent
+				- op: add
+				  path: /metadata/annotations/kustomize.toolkit.fluxcd.io~1ssa
+				  value: IfNotPresent
 				"""
 		}]
 	}
