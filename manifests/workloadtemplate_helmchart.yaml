@@ -30,6 +30,7 @@ spec:
       repository!: =~"^(http?s|oci)://.*$"
       version!:    string
       values?: [string]: _
+      valuesFrom?: [...VALUESREFERENCE.#x]
       namespaceLabels: {
         [key=string]: string
       } | *{}
@@ -183,6 +184,21 @@ spec:
         {
           values: #workload.spec.input.values
         }
+        if #workload.spec.input.valuesFrom != _|_ // explicit error (_|_ literal) in source
+        {
+          valuesFrom: #workload.spec.input.valuesFrom
+        }
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#ValuesReference
+    let VALUESREFERENCE = {
+      #x: {
+        kind:        string @go(Kind)
+        name:        string @go(Name)
+        valuesKey?:  string @go(ValuesKey)
+        targetPath?: string @go(TargetPath)
+        optional?:   bool   @go(Optional)
       }
     }
 
@@ -1243,17 +1259,6 @@ spec:
         keepHistory?:         bool               @go(KeepHistory)
         disableWait?:         bool               @go(DisableWait)
         deletionPropagation?: null | string      @go(DeletionPropagation,*string)
-      }
-    }
-
-    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#ValuesReference
-    let VALUESREFERENCE = {
-      #x: {
-        kind:        string @go(Kind)
-        name:        string @go(Name)
-        valuesKey?:  string @go(ValuesKey)
-        targetPath?: string @go(TargetPath)
-        optional?:   bool   @go(Optional)
       }
     }
 

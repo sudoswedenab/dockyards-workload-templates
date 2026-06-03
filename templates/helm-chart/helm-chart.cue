@@ -17,6 +17,7 @@ import (
 	repository!: string & =~"^(http?s|oci)://.*$"
 	version!:    string
 	values?: [string]: _
+	valuesFrom?: [...helmv2.#ValuesReference]
 	namespaceLabels: {[key=string]: string} | *{}
 
 	// Extra manifests to apply in the same workload (e.g. SealedSecret,
@@ -137,6 +138,9 @@ helmRelease: helmv2.#HelmRelease & {
 		targetNamespace:  #workload.spec.targetNamespace
 		if #workload.spec.input.values != _|_ {
 			values: #workload.spec.input.values
+		}
+		if #workload.spec.input.valuesFrom != _|_ {
+			valuesFrom: #workload.spec.input.valuesFrom
 		}
 	}
 }
