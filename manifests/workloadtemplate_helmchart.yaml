@@ -39,6 +39,7 @@ spec:
         "namespace.yaml"?:     _|_ // explicit error (_|_ literal) in source
         "kustomization.yaml"?: _|_ // explicit error (_|_ literal) in source
       } | *{}
+      kustomize?: KUSTOMIZE.#x
     }
     #cluster: {
       TYPEMETA.#x
@@ -188,6 +189,12 @@ spec:
         {
           valuesFrom: #workload.spec.input.valuesFrom
         }
+        if #workload.spec.input.kustomize != _|_ // explicit error (_|_ literal) in source
+        {
+          postRenderers: [{
+            kustomize: #workload.spec.input.kustomize
+          }]
+        }
       }
     }
 
@@ -199,6 +206,45 @@ spec:
         valuesKey?:  string @go(ValuesKey)
         targetPath?: string @go(TargetPath)
         optional?:   bool   @go(Optional)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#Kustomize
+    let KUSTOMIZE = {
+      #x: {
+        patches?: [...PATCH.#x] @go(Patches,[]kustomize.Patch)
+        images?: [...IMAGE.#x] @go(Images,[]kustomize.Image)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/kustomize".#Patch
+    let PATCH = {
+      #x: {
+        patch:   string             @go(Patch)
+        target?: null | SELECTOR.#x @go(Target,*Selector)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/kustomize".#Selector
+    let SELECTOR = {
+      #x: {
+        group?:              string @go(Group)
+        version?:            string @go(Version)
+        kind?:               string @go(Kind)
+        namespace?:          string @go(Namespace)
+        name?:               string @go(Name)
+        annotationSelector?: string @go(AnnotationSelector)
+        labelSelector?:      string @go(LabelSelector)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/kustomize".#Image
+    let IMAGE = {
+      #x: {
+        name:     string @go(Name)
+        newName?: string @go(NewName)
+        newTag?:  string @go(NewTag)
+        digest?:  string @go(Digest)
       }
     }
 
@@ -401,10 +447,10 @@ spec:
           [string]: string
         } @go(CommonAnnotations,map[string]string)
         patchesStrategicMerge?: [...PATCHSTRATEGICMERGE.#x] @go(PatchesStrategicMerge,[]PatchStrategicMerge)
-        patchesJson6902?: [...PATCH.#x] @go(PatchesJson6902,[]Patch)
-        patches?: [...PATCH.#x] @go(Patches,[]Patch)
-        images?: [...IMAGE.#x] @go(Images,[]Image)
-        imageTags?: [...IMAGE.#x] @go(ImageTags,[]Image)
+        patchesJson6902?: [...PATCH_1.#x] @go(PatchesJson6902,[]Patch)
+        patches?: [...PATCH_1.#x] @go(Patches,[]Patch)
+        images?: [...IMAGE_1.#x] @go(Images,[]Image)
+        imageTags?: [...IMAGE_1.#x] @go(ImageTags,[]Image)
         replacements?: [...REPLACEMENTFIELD.#x] @go(Replacements,[]ReplacementField)
         replicas?: [...REPLICA.#x] @go(Replicas,[]Replica)
         vars?: [...VAR.#x] @go(Vars,[]Var)
@@ -485,11 +531,11 @@ spec:
     }
 
     //cue:path: "sigs.k8s.io/kustomize/api/types".#Patch
-    let PATCH = {
+    let PATCH_1 = {
       #x: {
-        path?:   string             @go(Path)
-        patch?:  string             @go(Patch)
-        target?: null | SELECTOR.#x @go(Target,*Selector)
+        path?:   string               @go(Path)
+        patch?:  string               @go(Patch)
+        target?: null | SELECTOR_1.#x @go(Target,*Selector)
         options?: {
           [string]: bool
         } @go(Options,map[string]bool)
@@ -497,7 +543,7 @@ spec:
     }
 
     //cue:path: "sigs.k8s.io/kustomize/api/types".#Selector
-    let SELECTOR = {
+    let SELECTOR_1 = {
       #x: {
         RESID.#x
         annotationSelector?: string @go(AnnotationSelector)
@@ -515,7 +561,7 @@ spec:
     }
 
     //cue:path: "sigs.k8s.io/kustomize/api/types".#Image
-    let IMAGE = {
+    let IMAGE_1 = {
       #x: {
         name?:      string @go(Name)
         newName?:   string @go(NewName)
@@ -563,8 +609,8 @@ spec:
     //cue:path: "sigs.k8s.io/kustomize/api/types".#TargetSelector
     let TARGETSELECTOR = {
       #x: {
-        select?: null | SELECTOR.#x @go(Select,*Selector)
-        reject?: [...null | SELECTOR.#x] @go(Reject,[]*Selector)
+        select?: null | SELECTOR_1.#x @go(Select,*Selector)
+        reject?: [...null | SELECTOR_1.#x] @go(Reject,[]*Selector)
         fieldPaths?: [...string] @go(FieldPaths,[]string)
         options?: null | FIELDOPTIONS.#x @go(Options,*FieldOptions)
       }
@@ -784,8 +830,8 @@ spec:
         healthChecks?: [...NAMESPACEDOBJECTKINDREFERENCE.#x] @go(HealthChecks,[]meta.NamespacedObjectKindReference)
         namePrefix?: string @go(NamePrefix)
         nameSuffix?: string @go(NameSuffix)
-        patches?: [...PATCH_1.#x] @go(Patches,[]kustomize.Patch)
-        images?: [...IMAGE_1.#x] @go(Images,[]kustomize.Image)
+        patches?: [...PATCH.#x] @go(Patches,[]kustomize.Patch)
+        images?: [...IMAGE.#x] @go(Images,[]kustomize.Image)
         serviceAccountName?: string                           @go(ServiceAccountName)
         sourceRef:           CROSSNAMESPACESOURCEREFERENCE.#x @go(SourceRef)
         suspend?:            bool                             @go(Suspend)
@@ -874,37 +920,6 @@ spec:
         kind:        string @go(Kind)
         name:        string @go(Name)
         namespace?:  string @go(Namespace)
-      }
-    }
-
-    //cue:path: "github.com/fluxcd/pkg/apis/kustomize".#Patch
-    let PATCH_1 = {
-      #x: {
-        patch:   string               @go(Patch)
-        target?: null | SELECTOR_1.#x @go(Target,*Selector)
-      }
-    }
-
-    //cue:path: "github.com/fluxcd/pkg/apis/kustomize".#Selector
-    let SELECTOR_1 = {
-      #x: {
-        group?:              string @go(Group)
-        version?:            string @go(Version)
-        kind?:               string @go(Kind)
-        namespace?:          string @go(Namespace)
-        name?:               string @go(Name)
-        annotationSelector?: string @go(AnnotationSelector)
-        labelSelector?:      string @go(LabelSelector)
-      }
-    }
-
-    //cue:path: "github.com/fluxcd/pkg/apis/kustomize".#Image
-    let IMAGE_1 = {
-      #x: {
-        name:     string @go(Name)
-        newName?: string @go(NewName)
-        newTag?:  string @go(NewTag)
-        digest?:  string @go(Digest)
       }
     }
 
@@ -1153,7 +1168,7 @@ spec:
     let IGNORERULE = {
       #x: {
         paths: [...string] @go(Paths,[]string)
-        target?: null | SELECTOR_1.#x @go(Target,*kustomize.Selector)
+        target?: null | SELECTOR.#x @go(Target,*kustomize.Selector)
       }
     }
 
@@ -1266,14 +1281,6 @@ spec:
     let POSTRENDERER = {
       #x: {
         kustomize?: null | KUSTOMIZE.#x @go(Kustomize,*Kustomize)
-      }
-    }
-
-    //cue:path: "github.com/fluxcd/helm-controller/api/v2".#Kustomize
-    let KUSTOMIZE = {
-      #x: {
-        patches?: [...PATCH_1.#x] @go(Patches,[]kustomize.Patch)
-        images?: [...IMAGE_1.#x] @go(Images,[]kustomize.Image)
       }
     }
 

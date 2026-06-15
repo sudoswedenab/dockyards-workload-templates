@@ -28,6 +28,8 @@ import (
 		"namespace.yaml"?:     _|_
 		"kustomization.yaml"?: _|_
 	} | *{}
+
+	kustomize?: helmv2.#Kustomize
 }
 
 #cluster: dockyardsv1.#Cluster
@@ -141,6 +143,13 @@ helmRelease: helmv2.#HelmRelease & {
 		}
 		if #workload.spec.input.valuesFrom != _|_ {
 			valuesFrom: #workload.spec.input.valuesFrom
+		}
+		if #workload.spec.input.kustomize != _|_ {
+			postRenderers: [
+				{
+					kustomize: #workload.spec.input.kustomize
+				},
+			]
 		}
 	}
 }
