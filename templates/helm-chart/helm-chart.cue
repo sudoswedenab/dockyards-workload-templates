@@ -109,15 +109,15 @@ _ociRepository: sourcev1.#OCIRepository & {
 	}
 	spec: {
 		interval: "5m"
-		if strings.HasPrefix(#workload.spec.input.repository, "oci://") {
-			url: #workload.spec.input.repository
+		if strings.HasPrefix(_repository, "oci://") {
+			url: _repository
 			ref: tag: #workload.spec.input.version
 			if #workload.spec.input.repositoryCA != _|_ {
 				certSecretRef:
 					name: #workload.spec.input.repositoryCA
 			}
 		}
-		if !strings.HasPrefix(#workload.spec.input.repository, "oci://") {
+		if !strings.HasPrefix(_repository, "oci://") {
 			url:     "oci://invalid.local/disabled"
 			suspend: true
 		}
@@ -137,7 +137,7 @@ for entry in [_ociRepositoryEntry & {repository: _repository}] if entry.key != "
 	"\(entry.key)": entry.value
 }
 
-helmRepository: sourcev1.#HelmRepository & {
+_helmRepository: sourcev1.#HelmRepository & {
 	apiVersion: "source.toolkit.fluxcd.io/v1"
 	kind:       sourcev1.#HelmRepositoryKind
 	metadata: {
@@ -146,20 +146,31 @@ helmRepository: sourcev1.#HelmRepository & {
 	}
 	spec: {
 		interval: "5m"
-		if strings.HasPrefix(#workload.spec.input.repository, "oci://") {
-			url: _ociRepository.spec.url
+		if strings.HasPrefix(_repository, "oci://") {
+			url:     "https://invalid.local/disabled"
+			suspend: true
 		}
-		if !strings.HasPrefix(#workload.spec.input.repository, "oci://") {
-			url: #workload.spec.input.repository
-		}
-		if #workload.spec.input.repositoryCA != _|_ {
-			certSecretRef:
-				name: #workload.spec.input.repositoryCA
-		}
-		if strings.HasPrefix(#workload.spec.input.repository, "oci://") {
-			type: "oci"
+		if !strings.HasPrefix(_repository, "oci://") {
+			url: _repository
+			if #workload.spec.input.repositoryCA != _|_ {
+				certSecretRef:
+					name: #workload.spec.input.repositoryCA
+			}
 		}
 	}
+}
+
+_helmRepositoryEntry: *{
+	key:        ""
+	repository: string & =~"^oci://.*$"
+} | {
+	key:        "helmRepository"
+	repository: string & =~"^https?://.*$"
+	value:      _helmRepository
+}
+
+for entry in [_helmRepositoryEntry & {repository: _repository}] if entry.key != "" {
+	"\(entry.key)": entry.value
 }
 
 helmRelease: helmv2.#HelmRelease & {
@@ -170,13 +181,21 @@ helmRelease: helmv2.#HelmRelease & {
 		namespace: #workload.metadata.namespace
 	}
 	spec: {
-		chart: spec: {
-			chart: #workload.spec.input.chart
-			sourceRef: {
-				kind: helmRepository.kind
-				name: helmRepository.metadata.name
+		if strings.HasPrefix(_repository, "oci://") {
+			chartRef: {
+				kind: sourcev1.#OCIRepositoryKind
+				name: #workload.metadata.name
 			}
-			version: #workload.spec.input.version
+		}
+		if !strings.HasPrefix(_repository, "oci://") {
+			chart: spec: {
+				chart: #workload.spec.input.chart
+				sourceRef: {
+					kind: sourcev1.#HelmRepositoryKind
+					name: #workload.metadata.name
+				}
+				version: #workload.spec.input.version
+			}
 		}
 		install: {
 			remediation: retries: -1
