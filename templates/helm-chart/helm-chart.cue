@@ -13,9 +13,10 @@ import (
 )
 
 #Input: {
-	chart!:      string
-	repository!: string & =~"^(http?s|oci)://.*$"
-	version!:    string
+	chart!:        string
+	repository!:   string & =~"^(http?s|oci)://.*$"
+	repositoryCA?: string
+	version!:      string
 	values?: [string]: _
 	valuesFrom?: [...helmv2.#ValuesReference]
 	namespaceLabels: {[key=string]: string} | *{}
@@ -107,6 +108,10 @@ helmRepository: sourcev1.#HelmRepository & {
 	spec: {
 		interval: "5m"
 		url:      #workload.spec.input.repository
+		if #workload.spec.input.repositoryCA != _|_ {
+			certSecretRef:
+				name: #workload.spec.input.repositoryCA
+		}
 		if strings.HasPrefix(#workload.spec.input.repository, "oci://") {
 			type: "oci"
 		}
