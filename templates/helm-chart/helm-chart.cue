@@ -16,6 +16,7 @@ import (
 	chart!:      string
 	repository!: string & =~"^(http?s|oci)://.*$"
 	version!:    string
+	repositoryCA?: string
 	values?: [string]: _
 	valuesFrom?: [...helmv2.#ValuesReference]
 	namespaceLabels: {[key=string]: string} | *{}
@@ -27,6 +28,7 @@ import (
 		[filename=string]:     string
 		"namespace.yaml"?:     _|_
 		"kustomization.yaml"?: _|_
+		"helm-repository-ca-secret.yaml"?: _|_
 	} | *{}
 
 	kustomize?: helmv2.#Kustomize
@@ -46,8 +48,24 @@ _namespace: corev1.#Namespace & {
 	}
 }
 
+_helmRepositoryCASecretName: #workload.metadata.name + "-helm-repository-ca"
+
 _manifestFiles: {
 	"namespace.yaml": '\(yaml.Marshal(_namespace))'
+	if #workload.spec.input.repositoryCA != _|_ {
+		"helm-repository-ca-secret.yaml": '\(yaml.Marshal(corev1.#Secret & {
+			apiVersion: "v1"
+			kind:       "Secret"
+			metadata: {
+				name:      _helmRepositoryCASecretName
+				namespace: #workload.metadata.namespace
+			}
+			type: "Opaque"
+			stringData: {
+				"ca.crt": #workload.spec.input.repositoryCA
+			}
+		}))'
+	}
 	for filename, contents in #workload.spec.input.additionalResources {
 		"\(filename)": '\(contents)'
 	}
@@ -56,6 +74,9 @@ _manifestFiles: {
 _kustomization: kustomize.#Kustomization & {
 	resources: [
 		"namespace.yaml",
+		if #workload.spec.input.repositoryCA != _|_ {
+			"helm-repository-ca-secret.yaml"
+		},
 		for filename, _ in #workload.spec.input.additionalResources {
 			"\(filename)"
 		},
@@ -107,6 +128,11 @@ helmRepository: sourcev1.#HelmRepository & {
 	spec: {
 		interval: "5m"
 		url:      #workload.spec.input.repository
+		if #workload.spec.input.repositoryCA != _|_ {
+			certSecretRef: {
+				name: _helmRepositoryCASecretName
+			}
+		}
 		if strings.HasPrefix(#workload.spec.input.repository, "oci://") {
 			type: "oci"
 		}

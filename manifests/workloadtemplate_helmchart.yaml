@@ -26,18 +26,20 @@ spec:
     )
 
     #Input: {
-      chart!:      string
-      repository!: =~"^(http?s|oci)://.*$"
-      version!:    string
+      chart!:        string
+      repository!:   =~"^(http?s|oci)://.*$"
+      version!:      string
+      repositoryCA?: string
       values?: [string]: _
       valuesFrom?: [...VALUESREFERENCE.#x]
       namespaceLabels: {
         [key=string]: string
       } | *{}
       additionalResources: {
-        [filename=string]:     string
-        "namespace.yaml"?:     _|_ // explicit error (_|_ literal) in source
-        "kustomization.yaml"?: _|_ // explicit error (_|_ literal) in source
+        [filename=string]:                 string
+        "namespace.yaml"?:                 _|_ // explicit error (_|_ literal) in source
+        "kustomization.yaml"?:             _|_ // explicit error (_|_ literal) in source
+        "helm-repository-ca-secret.yaml"?: _|_ // explicit error (_|_ literal) in source
       } | *{}
       kustomize?: KUSTOMIZE.#x
     }
@@ -102,14 +104,32 @@ spec:
         labels: #workload.spec.input.namespaceLabels
       }
     }
+    _helmRepositoryCASecretName: #workload.metadata.name + "-helm-repository-ca"
     _manifestFiles: {
       "namespace.yaml": '\(yaml.Marshal(_namespace))'
+      if #workload.spec.input.repositoryCA != _|_ // explicit error (_|_ literal) in source
+      {
+        "helm-repository-ca-secret.yaml": '\(yaml.Marshal(SECRET.#x & {
+          apiVersion: "v1"
+          kind:       "Secret"
+          metadata: {
+            name:      _helmRepositoryCASecretName
+            namespace: #workload.metadata.namespace
+          }
+          type: "Opaque"
+          stringData: "ca.crt": #workload.spec.input.repositoryCA
+        }))'
+      }
       for filename, contents in #workload.spec.input.additionalResources {
         "\(filename)": '\(contents)'
       }
     }
     _kustomization: KUSTOMIZATION.#x & {
       resources: ["namespace.yaml",
+        if #workload.spec.input.repositoryCA != _|_ // explicit error (_|_ literal) in source
+        {
+          "helm-repository-ca-secret.yaml"
+        },
         for filename, _ in #workload.spec.input.additionalResources {
           "\(filename)"
         }]
@@ -155,6 +175,10 @@ spec:
       spec: {
         interval: "5m"
         url:      #workload.spec.input.repository
+        if #workload.spec.input.repositoryCA != _|_ // explicit error (_|_ literal) in source
+        {
+          certSecretRef: name: _helmRepositoryCASecretName
+        }
         if strings.HasPrefix(#workload.spec.input.repository, "oci://") {
           type: "oci"
         }
@@ -425,6 +449,27 @@ spec:
 
     //cue:path: "k8s.io/api/core/v1".#ConditionStatus
     let CONDITIONSTATUS_1 = {
+      #x: string
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#Secret
+    let SECRET = {
+      #x: {
+        TYPEMETA.#x
+        metadata?:  OBJECTMETA.#x @go(ObjectMeta) @protobuf(1,bytes,opt)
+        immutable?: null | bool   @go(Immutable,*bool) @protobuf(5,varint,opt)
+        data?: {
+          [string]: bytes
+        } @go(Data,map[string][]byte) @protobuf(2,bytes,rep)
+        stringData?: {
+          [string]: string
+        } @go(StringData,map[string]string) @protobuf(4,bytes,rep)
+        type?: SECRETTYPE.#x @go(Type) @protobuf(3,bytes,opt,casttype=SecretType)
+      }
+    }
+
+    //cue:path: "k8s.io/api/core/v1".#SecretType
+    let SECRETTYPE = {
       #x: string
     }
 
