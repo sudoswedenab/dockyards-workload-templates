@@ -42,57 +42,9 @@ spec:
       } | *{}
       kustomize?: KUSTOMIZE.#x
     }
-    #cluster: {
-      TYPEMETA.#x
-      metadata?: OBJECTMETA.#x @go(ObjectMeta)
-      spec?: {
-        version?:                  string @go(Version)
-        noDefaultIngressProvider?: bool   @go(NoDefaultIngressProvider)
-        upgrades?: [...{
-          to: string @go(To)
-        }] @go(Upgrades,[]ClusterUpgrade)
-        blockDeletion?:          bool                                @go(BlockDeletion)
-        allocateInternalIP?:     bool                                @go(AllocateInternalIP)
-        ipPoolRef?:              null | TYPEDLOCALOBJECTREFERENCE.#x @go(IPPoolRef,*corev1.TypedLocalObjectReference)
-        duration?:               null | DURATION.#x                  @go(Duration,*metav1.Duration)
-        noDefaultNetworkPlugin?: bool                                @go(NoDefaultNetworkPlugin)
-        podSubnets?: [...string] @go(PodSubnets,[]string)
-        serviceSubnets?: [...string] @go(ServiceSubnets,[]string)
-      } @go(Spec)
-      status?: {
-        conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition)
-        clusterServiceID?: string @go(ClusterServiceID)
-        version?:          string @go(Version)
-        dnsZones?: [...string] @go(DNSZones,[]string)
-        apiEndpoint?: {
-          host: string @go(Host)
-          port: int32  @go(Port)
-        } @go(APIEndpoint)
-        expirationTimestamp?: null | TIME.#x @go(ExpirationTimestamp,*metav1.Time)
-      } @go(Status)
-    }
+    #cluster:  CLUSTER.#x
+    #workload: WORKLOAD.#x
     #workload: {
-      TYPEMETA.#x
-      metadata?: OBJECTMETA.#x @go(ObjectMeta)
-      spec?: {
-        clusterComponent?:      bool                           @go(ClusterComponent)
-        targetNamespace:        string                         @go(TargetNamespace)
-        workloadTemplateInput?: null | JSON.#x                 @go(WorkloadTemplateInput,*apiextensionsv1.JSON)
-        input?:                 null | JSON.#x                 @go(Input,*apiextensionsv1.JSON)
-        workloadTemplateRef?:   null | TYPEDOBJECTREFERENCE.#x @go(WorkloadTemplateRef,*corev1.TypedObjectReference)
-        provenience:            string                         @go(Provenience)
-      } @go(Spec)
-      status?: {
-        conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition)
-        dependencyRefs?: [...TYPEDLOCALOBJECTREFERENCE.#x] @go(DependencyRefs,[]corev1.TypedLocalObjectReference)
-        urls?: [...string] @go(URLs,[]string)
-        references?: [...{
-          TYPEDOBJECTREFERENCE.#x
-          parent?: null | TYPEDLOCALOBJECTREFERENCE.#x @go(Parent,*corev1.TypedLocalObjectReference)
-          urls?: [...string] @go(URLs,[]string)
-        }] @go(References,[]WorkloadReference)
-      } @go(Status)
-    } & {
       spec: input: #Input
     }
     _namespace: NAMESPACE.#x & {
@@ -146,6 +98,44 @@ spec:
         }
       }
     }
+    _repository: #workload.spec.input.repository
+    _ociRepository: OCIREPOSITORY.#x & {
+      apiVersion: "source.toolkit.fluxcd.io/v1"
+      kind:       OCIREPOSITORYKIND.#x
+      metadata: {
+        name:      #workload.metadata.name
+        namespace: #workload.metadata.namespace
+      }
+      spec: {
+        interval: "5m"
+        if strings.HasPrefix(#workload.spec.input.repository, "oci://") {
+          url: #workload.spec.input.repository
+          ref: tag: #workload.spec.input.version
+          if #workload.spec.input.repositoryCA != _|_ // explicit error (_|_ literal) in source
+          {
+            certSecretRef: name: #workload.spec.input.repositoryCA
+          }
+        }
+        if !strings.HasPrefix(#workload.spec.input.repository, "oci://") {
+          url:     "oci://invalid.local/disabled"
+          suspend: true
+        }
+      }
+    }
+    _ociRepositoryEntry: *{
+      key:        ""
+      repository: =~"^https?://.*$"
+    } | {
+      key:        "ociRepository"
+      repository: =~"^oci://.*$"
+      value:      _ociRepository
+    }
+
+    for entry in [_ociRepositoryEntry & {
+      repository: _repository
+    }] if entry.key != "" {
+      "\(entry.key)": entry.value
+    }
     helmRepository: HELMREPOSITORY.#x & {
       apiVersion: "source.toolkit.fluxcd.io/v1"
       kind:       HELMREPOSITORYKIND.#x
@@ -155,7 +145,12 @@ spec:
       }
       spec: {
         interval: "5m"
-        url:      #workload.spec.input.repository
+        if strings.HasPrefix(#workload.spec.input.repository, "oci://") {
+          url: _ociRepository.spec.url
+        }
+        if !strings.HasPrefix(#workload.spec.input.repository, "oci://") {
+          url: #workload.spec.input.repository
+        }
         if #workload.spec.input.repositoryCA != _|_ // explicit error (_|_ literal) in source
         {
           certSecretRef: name: #workload.spec.input.repositoryCA
@@ -253,6 +248,16 @@ spec:
       }
     }
 
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#Cluster
+    let CLUSTER = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x    @go(ObjectMeta)
+        spec?:     CLUSTERSPEC.#x   @go(Spec)
+        status?:   CLUSTERSTATUS.#x @go(Status)
+      }
+    }
+
     //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#TypeMeta
     let TYPEMETA = {
       #x: {
@@ -331,6 +336,29 @@ spec:
       #x: _
     }
 
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#ClusterSpec
+    let CLUSTERSPEC = {
+      #x: {
+        version?:                  string @go(Version)
+        noDefaultIngressProvider?: bool   @go(NoDefaultIngressProvider)
+        upgrades?: [...CLUSTERUPGRADE.#x] @go(Upgrades,[]ClusterUpgrade)
+        blockDeletion?:          bool                                @go(BlockDeletion)
+        allocateInternalIP?:     bool                                @go(AllocateInternalIP)
+        ipPoolRef?:              null | TYPEDLOCALOBJECTREFERENCE.#x @go(IPPoolRef,*corev1.TypedLocalObjectReference)
+        duration?:               null | DURATION.#x                  @go(Duration,*metav1.Duration)
+        noDefaultNetworkPlugin?: bool                                @go(NoDefaultNetworkPlugin)
+        podSubnets?: [...string] @go(PodSubnets,[]string)
+        serviceSubnets?: [...string] @go(ServiceSubnets,[]string)
+      }
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#ClusterUpgrade
+    let CLUSTERUPGRADE = {
+      #x: {
+        to: string @go(To)
+      }
+    }
+
     //cue:path: "k8s.io/api/core/v1".#TypedLocalObjectReference
     let TYPEDLOCALOBJECTREFERENCE = {
       #x: {
@@ -343,6 +371,18 @@ spec:
     //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#Duration
     let DURATION = {
       #x: _
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#ClusterStatus
+    let CLUSTERSTATUS = {
+      #x: {
+        conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition)
+        clusterServiceID?: string @go(ClusterServiceID)
+        version?:          string @go(Version)
+        dnsZones?: [...string] @go(DNSZones,[]string)
+        apiEndpoint?:         CLUSTERAPIENDPOINT.#x @go(APIEndpoint)
+        expirationTimestamp?: null | TIME.#x        @go(ExpirationTimestamp,*metav1.Time)
+      }
     }
 
     //cue:path: "k8s.io/apimachinery/pkg/apis/meta/v1".#Condition
@@ -362,6 +402,36 @@ spec:
       #x: string
     }
 
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#ClusterAPIEndpoint
+    let CLUSTERAPIENDPOINT = {
+      #x: {
+        host: string @go(Host)
+        port: int32  @go(Port)
+      }
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#Workload
+    let WORKLOAD = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x     @go(ObjectMeta)
+        spec?:     WORKLOADSPEC.#x   @go(Spec)
+        status?:   WORKLOADSTATUS.#x @go(Status)
+      }
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#WorkloadSpec
+    let WORKLOADSPEC = {
+      #x: {
+        clusterComponent?:      bool                           @go(ClusterComponent)
+        targetNamespace:        string                         @go(TargetNamespace)
+        workloadTemplateInput?: null | JSON.#x                 @go(WorkloadTemplateInput,*apiextensionsv1.JSON)
+        input?:                 null | JSON.#x                 @go(Input,*apiextensionsv1.JSON)
+        workloadTemplateRef?:   null | TYPEDOBJECTREFERENCE.#x @go(WorkloadTemplateRef,*corev1.TypedObjectReference)
+        provenience:            string                         @go(Provenience)
+      }
+    }
+
     //cue:path: "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1".#JSON
     let JSON = {
       #x: _
@@ -374,6 +444,25 @@ spec:
         kind:       string        @go(Kind) @protobuf(2,bytes,opt)
         name:       string        @go(Name) @protobuf(3,bytes,opt)
         namespace?: null | string @go(Namespace,*string) @protobuf(4,bytes,opt)
+      }
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#WorkloadStatus
+    let WORKLOADSTATUS = {
+      #x: {
+        conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition)
+        dependencyRefs?: [...TYPEDLOCALOBJECTREFERENCE.#x] @go(DependencyRefs,[]corev1.TypedLocalObjectReference)
+        urls?: [...string] @go(URLs,[]string)
+        references?: [...WORKLOADREFERENCE.#x] @go(References,[]WorkloadReference)
+      }
+    }
+
+    //cue:path: "github.com/sudoswedenab/dockyards-backend/api/v1alpha3".#WorkloadReference
+    let WORKLOADREFERENCE = {
+      #x: {
+        TYPEDOBJECTREFERENCE.#x
+        parent?: null | TYPEDLOCALOBJECTREFERENCE.#x @go(Parent,*corev1.TypedLocalObjectReference)
+        urls?: [...string] @go(URLs,[]string)
       }
     }
 
@@ -982,6 +1071,104 @@ spec:
       #x: "GitRepository"
     }
 
+    //cue:path: "github.com/fluxcd/source-controller/api/v1".#OCIRepository
+    let OCIREPOSITORY = {
+      #x: {
+        TYPEMETA.#x
+        metadata?: OBJECTMETA.#x          @go(ObjectMeta)
+        spec?:     OCIREPOSITORYSPEC.#x   @go(Spec)
+        status?:   OCIREPOSITORYSTATUS.#x @go(Status)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/source-controller/api/v1".#OCIRepositorySpec
+    let OCIREPOSITORYSPEC = {
+      #x: {
+        url:                 string                              @go(URL)
+        ref?:                null | OCIREPOSITORYREF.#x          @go(Reference,*OCIRepositoryRef)
+        layerSelector?:      null | OCILAYERSELECTOR.#x          @go(LayerSelector,*OCILayerSelector)
+        provider?:           string                              @go(Provider)
+        secretRef?:          null | LOCALOBJECTREFERENCE.#x      @go(SecretRef,*meta.LocalObjectReference)
+        verify?:             null | OCIREPOSITORYVERIFICATION.#x @go(Verify,*OCIRepositoryVerification)
+        serviceAccountName?: string                              @go(ServiceAccountName)
+        certSecretRef?:      null | LOCALOBJECTREFERENCE.#x      @go(CertSecretRef,*meta.LocalObjectReference)
+        proxySecretRef?:     null | LOCALOBJECTREFERENCE.#x      @go(ProxySecretRef,*meta.LocalObjectReference)
+        interval:            DURATION.#x                         @go(Interval)
+        timeout?:            null | DURATION.#x                  @go(Timeout,*metav1.Duration)
+        ignore?:             null | string                       @go(Ignore,*string)
+        insecure?:           bool                                @go(Insecure)
+        suspend?:            bool                                @go(Suspend)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/source-controller/api/v1".#OCIRepositoryRef
+    let OCIREPOSITORYREF = {
+      #x: {
+        digest?:       string @go(Digest)
+        semver?:       string @go(SemVer)
+        semverFilter?: string @go(SemverFilter)
+        tag?:          string @go(Tag)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/source-controller/api/v1".#OCILayerSelector
+    let OCILAYERSELECTOR = {
+      #x: {
+        mediaType?: string @go(MediaType)
+        operation?: string @go(Operation)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/source-controller/api/v1".#OCIRepositoryVerification
+    let OCIREPOSITORYVERIFICATION = {
+      #x: {
+        provider:   string                         @go(Provider)
+        secretRef?: null | LOCALOBJECTREFERENCE.#x @go(SecretRef,*meta.LocalObjectReference)
+        matchOIDCIdentity?: [...OIDCIDENTITYMATCH.#x] @go(MatchOIDCIdentity,[]OIDCIdentityMatch)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/source-controller/api/v1".#OIDCIdentityMatch
+    let OIDCIDENTITYMATCH = {
+      #x: {
+        issuer:  string @go(Issuer)
+        subject: string @go(Subject)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/source-controller/api/v1".#OCIRepositoryStatus
+    let OCIREPOSITORYSTATUS = {
+      #x: {
+        RECONCILEREQUESTSTATUS.#x
+        observedGeneration?: int64 @go(ObservedGeneration)
+        conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition)
+        url?:                   string                     @go(URL)
+        artifact?:              null | ARTIFACT.#x         @go(Artifact,*meta.Artifact)
+        observedIgnore?:        null | string              @go(ObservedIgnore,*string)
+        observedLayerSelector?: null | OCILAYERSELECTOR.#x @go(ObservedLayerSelector,*OCILayerSelector)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/pkg/apis/meta".#Artifact
+    let ARTIFACT = {
+      #x: {
+        digest:         string       @go(Digest)
+        path:           string       @go(Path)
+        url:            string       @go(URL)
+        revision:       string       @go(Revision)
+        lastUpdateTime: TIME.#x      @go(LastUpdateTime)
+        size?:          null | int64 @go(Size,*int64)
+        metadata?: {
+          [string]: string
+        } @go(Metadata,map[string]string)
+      }
+    }
+
+    //cue:path: "github.com/fluxcd/source-controller/api/v1".#OCIRepositoryKind
+    let OCIREPOSITORYKIND = {
+      #x: "OCIRepository"
+    }
+
     //cue:path: "github.com/fluxcd/source-controller/api/v1".#HelmRepository
     let HELMREPOSITORY = {
       #x: {
@@ -1033,21 +1220,6 @@ spec:
         conditions?: [...CONDITION.#x] @go(Conditions,[]metav1.Condition)
         url?:      string             @go(URL)
         artifact?: null | ARTIFACT.#x @go(Artifact,*meta.Artifact)
-      }
-    }
-
-    //cue:path: "github.com/fluxcd/pkg/apis/meta".#Artifact
-    let ARTIFACT = {
-      #x: {
-        digest:         string       @go(Digest)
-        path:           string       @go(Path)
-        url:            string       @go(URL)
-        revision:       string       @go(Revision)
-        lastUpdateTime: TIME.#x      @go(LastUpdateTime)
-        size?:          null | int64 @go(Size,*int64)
-        metadata?: {
-          [string]: string
-        } @go(Metadata,map[string]string)
       }
     }
 

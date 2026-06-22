@@ -98,6 +98,45 @@ kustomization: kustomizev1.#Kustomization & {
 	}
 }
 
+_repository: #workload.spec.input.repository
+
+_ociRepository: sourcev1.#OCIRepository & {
+	apiVersion: "source.toolkit.fluxcd.io/v1"
+	kind:       sourcev1.#OCIRepositoryKind
+	metadata: {
+		name:      #workload.metadata.name
+		namespace: #workload.metadata.namespace
+	}
+	spec: {
+		interval: "5m"
+		if strings.HasPrefix(#workload.spec.input.repository, "oci://") {
+			url: #workload.spec.input.repository
+			ref: tag: #workload.spec.input.version
+			if #workload.spec.input.repositoryCA != _|_ {
+				certSecretRef:
+					name: #workload.spec.input.repositoryCA
+			}
+		}
+		if !strings.HasPrefix(#workload.spec.input.repository, "oci://") {
+			url:     "oci://invalid.local/disabled"
+			suspend: true
+		}
+	}
+}
+
+_ociRepositoryEntry: *{
+	key:        ""
+	repository: string & =~"^https?://.*$"
+} | {
+	key:        "ociRepository"
+	repository: string & =~"^oci://.*$"
+	value:      _ociRepository
+}
+
+for entry in [_ociRepositoryEntry & {repository: _repository}] if entry.key != "" {
+	"\(entry.key)": entry.value
+}
+
 helmRepository: sourcev1.#HelmRepository & {
 	apiVersion: "source.toolkit.fluxcd.io/v1"
 	kind:       sourcev1.#HelmRepositoryKind
@@ -107,7 +146,12 @@ helmRepository: sourcev1.#HelmRepository & {
 	}
 	spec: {
 		interval: "5m"
-		url:      #workload.spec.input.repository
+		if strings.HasPrefix(#workload.spec.input.repository, "oci://") {
+			url: _ociRepository.spec.url
+		}
+		if !strings.HasPrefix(#workload.spec.input.repository, "oci://") {
+			url: #workload.spec.input.repository
+		}
 		if #workload.spec.input.repositoryCA != _|_ {
 			certSecretRef:
 				name: #workload.spec.input.repositoryCA
