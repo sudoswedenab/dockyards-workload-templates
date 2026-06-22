@@ -26,9 +26,10 @@ spec:
     )
 
     #Input: {
-      chart!:      string
-      repository!: =~"^(http?s|oci)://.*$"
-      version!:    string
+      chart!:        string
+      repository!:   =~"^(http?s|oci)://.*$"
+      repositoryCA?: string
+      version!:      string
       values?: [string]: _
       valuesFrom?: [...VALUESREFERENCE.#x]
       namespaceLabels: {
@@ -155,6 +156,10 @@ spec:
       spec: {
         interval: "5m"
         url:      #workload.spec.input.repository
+        if #workload.spec.input.repositoryCA != _|_ // explicit error (_|_ literal) in source
+        {
+          certSecretRef: name: #workload.spec.input.repositoryCA
+        }
         if strings.HasPrefix(#workload.spec.input.repository, "oci://") {
           type: "oci"
         }
