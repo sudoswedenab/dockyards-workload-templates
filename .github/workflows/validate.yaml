@@ -12,9 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: Validate
+name: validate
 on:
   pull_request:
+    paths:
+      - '**/*.go'
+      - '**/*.cue'
+      - cue.mod/**
+      - go.mod
+      - go.sum
+      - generate.go
+      - cmd/**
+      - manifests/**
+      - templates/**
+permissions:
+  contents: read
 jobs:
   cue-eval:
     runs-on: ubuntu-latest

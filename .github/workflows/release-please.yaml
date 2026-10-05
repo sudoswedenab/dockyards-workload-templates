@@ -1,4 +1,4 @@
-# Copyright 2024 Sudo Sweden AB
+# Copyright 2026 Sudo Sweden AB
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,38 +12,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: build
+name: release-please
 on:
   push:
     branches:
-      - feat/*
-      - fix/*
-      - refactor/*
       - main
-    paths:
-      - '**/*.go'
-      - '**/*.cue'
-      - cue.mod/**
-      - go.mod
-      - go.sum
-      - generate.go
-      - cmd/**
-      - manifests/**
-      - templates/**
   workflow_dispatch:
 permissions:
-  id-token: write
   contents: read
 jobs:
-  build:
+  release-please:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
-      - id: prep
-        run: |
-          branch=${GITHUB_REF##*/}
-          sha=${GITHUB_SHA::8}
-          ts=$(date +%s)
-          echo "buildid=${branch}-${sha}-${ts}" >> "$GITHUB_OUTPUT"
+      - id: release
+        uses: sudoswedenab/sudo-actions/release-please@main
+
+  build-release:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
       - uses: actions/checkout@v4.2.2
       - uses: aws-actions/configure-aws-credentials@v4.2.1
         with:
@@ -59,5 +56,5 @@ jobs:
       - shell: bash
         run: |
           #!/usr/bin/env bash
-          flux push artifact "oci://${{steps.login.outputs.registry}}/sudosweden/dockyards-workload-templates:${{steps.prep.outputs.buildid}}-manifests" \
-            --path manifests --source "${{github.repositoryUrl}}" --revision "${{github.ref_name}}@sha1:${{github.sha}}"
+          flux push artifact "oci://${{steps.login.outputs.registry}}/sudosweden/dockyards-workload-templates:${{needs.release-please.outputs.tag_name}}-manifests" \
+            --path manifests --source "${{github.repositoryUrl}}" --revision "${{needs.release-please.outputs.tag_name}}@sha1:${{github.sha}}"
