@@ -31,6 +31,7 @@ resources:
 - workloadtemplate_podinfo.yaml
 - workloadtemplate_prometheus.yaml
 - workloadtemplate_promtail.yaml
+- workloadtemplate_pyroute2cni.yaml
 - workloadtemplate_rbac.yaml
 - workloadtemplate_strimzikafka.yaml
 - workloadtemplate_traefik.yaml
