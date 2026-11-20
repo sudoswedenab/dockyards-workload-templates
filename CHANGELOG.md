@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/sudoswedenab/dockyards-workload-templates/compare/v0.1.1...v0.1.2) (2026-11-20)
+
+
+### Features
+
+* add external-dns-rfc2136 template ([07e904b](https://github.com/sudoswedenab/dockyards-workload-templates/commit/07e904b99fd622ae91f6ff62fd7a34c9e2132f0f))
+
 ## [0.1.1](https://github.com/sudoswedenab/dockyards-workload-templates/compare/v0.1.0...v0.1.1) (2026-10-05)
 
 
