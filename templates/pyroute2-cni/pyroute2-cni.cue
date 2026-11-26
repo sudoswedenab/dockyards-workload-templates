@@ -9,12 +9,12 @@ import (
 )
 
 #Input: {
-	url!:     string & =~"^(http?s|ssh)://.*$" | *"https://github.com/svinota/pyroute2-cni.git"
-	ref!:     #Ref   | *{branch: "main"}
-	pathCrds:     string | *"./kubernetes/crds"
-    pathRelease:  string | *"./kubernetes/releases/dev"
-	interval: string & =~"^([0-9]+(\\.[0-9]+)?(ms|s|m|h))+$" | *"5m"
-	timeout?: string & =~"^([0-9]+(\\.[0-9]+)?(ms|s|m|h))+$" | *"60s"
+	url: string & =~"^(http?s|ssh)://.*$" | *"https://github.com/svinota/pyroute2-cni.git"
+	ref: #Ref | *{branch: "main"}
+	pathCrds:    string | *"./kubernetes/crds"
+	pathRelease: string | *"./kubernetes/releases/dev"
+	interval:    string & =~"^([0-9]+(\\.[0-9]+)?(ms|s|m|h))+$" | *"5m"
+	timeout?:    string & =~"^([0-9]+(\\.[0-9]+)?(ms|s|m|h))+$" | *"60s"
 
 	// This is an optional field to enable the initialization of all
 	// submodules within the cloned Git repository, using their default settings.
@@ -48,7 +48,6 @@ import (
 	// The secret is stored in the workload cluster namespace in the management cluster.
 	// See: https://fluxcd.io/flux/components/source/gitrepositories/#service-account-reference
 	serviceAccountName?: null | meta.#LocalObjectReference
-
 }
 
 #Ref: {branch: string} | {tag: string} | {semver: string} | {name: string} | {commit: string}

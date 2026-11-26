@@ -21,8 +21,8 @@ spec:
     package template
 
     #Input: {
-      url!: string & =~"^(http?s|ssh)://.*$" | *"https://github.com/svinota/pyroute2-cni.git"
-      ref!: #Ref | *{
+      url: string & =~"^(http?s|ssh)://.*$" | *"https://github.com/svinota/pyroute2-cni.git"
+      ref: #Ref | *{
         branch: "main"
       }
       pathCrds:          string | *"./kubernetes/crds"
