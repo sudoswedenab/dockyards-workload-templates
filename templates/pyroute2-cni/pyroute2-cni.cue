@@ -11,7 +11,7 @@ import (
 #Input: {
 	url: string & =~"^(http?s|ssh)://.*$" | *"https://github.com/svinota/pyroute2-cni.git"
 	ref: #Ref | *{branch: "main"}
-	pathCrds:    string | *"./kubernetes/crds"
+	pathCRDs:    string | *"./kubernetes/crds/0.3"
 	pathRelease: string | *"./kubernetes/releases/dev"
 	interval:    string & =~"^([0-9]+(\\.[0-9]+)?(ms|s|m|h))+$" | *"5m"
 	timeout?:    string & =~"^([0-9]+(\\.[0-9]+)?(ms|s|m|h))+$" | *"60s"
@@ -91,7 +91,7 @@ gitRepository: sourcev1.#GitRepository & {
 	}
 }
 
-kustomization: kustomizev1.#Kustomization & {
+crdsKustomization: kustomizev1.#Kustomization & {
 	apiVersion: "kustomize.toolkit.fluxcd.io/v1"
 	kind:       kustomizev1.#KustomizationKind
 	metadata: {
@@ -105,7 +105,8 @@ kustomization: kustomizev1.#Kustomization & {
 		}
 		kubeConfig: secretRef: name: #cluster.metadata.name + "-kubeconfig"
 		prune:         true
-		path:          #workload.spec.input.pathCrds
+		wait:          true
+		path:          #workload.spec.input.pathCRDs
 		retryInterval: "1m"
 		sourceRef: {
 			kind: gitRepository.kind
@@ -114,7 +115,7 @@ kustomization: kustomizev1.#Kustomization & {
 	}
 }
 
-kustomization: kustomizev1.#Kustomization & {
+releaseKustomization: kustomizev1.#Kustomization & {
 	apiVersion: "kustomize.toolkit.fluxcd.io/v1"
 	kind:       kustomizev1.#KustomizationKind
 	metadata: {
@@ -122,6 +123,10 @@ kustomization: kustomizev1.#Kustomization & {
 		namespace: #workload.metadata.namespace
 	}
 	spec: {
+		dependsOn: [{
+			name:      crdsKustomization.metadata.name
+			namespace: crdsKustomization.metadata.namespace
+		}]
 		interval: #workload.spec.input.interval
 		if #workload.spec.input.timeout != _|_ {
 			timeout: #workload.spec.input.timeout
